@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -70,6 +70,14 @@
     <Compile Include="Form1.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Form1.Bridge.cs">
+      <DependentUpon>Form1.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.Ui.cs">
+      <DependentUpon>Form1.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Form1.PromptContext.cs">
       <DependentUpon>Form1.cs</DependentUpon>
       <SubType>Form</SubType>
@@ -102,9 +110,6 @@
       <DependentUpon>Form1.cs</DependentUpon>
       <SubType>Form</SubType>
     </Compile>
-    <Compile Include="Form1.Designer.cs">
-      <DependentUpon>Form1.cs</DependentUpon>
-    </Compile>
     <Compile Include="controllers\GenerationController.cs" />
     <Compile Include="controllers\GenerationRequestPipeline.cs" />
     <Compile Include="controllers\GenerationInput.cs" />
@@ -122,6 +127,7 @@
     <Compile Include="utils\AutoCompleteHelper.cs" />
     <Compile Include="utils\ImageSourceMetadataReader.cs" />
     <Compile Include="utils\AnlasCostCache.cs" />
+    <Compile Include="utils\AppPaths.cs" />
     <Compile Include="utils\AnlasService.cs" />
     <Compile Include="utils\Vibe.cs" />
     <Compile Include="Program.cs" />
@@ -200,6 +206,9 @@
     <PackageReference Include="Newtonsoft.Json">
       <Version>13.0.3</Version>
     </PackageReference>
+    <PackageReference Include="Microsoft.Web.WebView2">
+      <Version>1.0.2592.51</Version>
+    </PackageReference>
     <PackageReference Include="ReaLTaiizor">
       <Version>3.8.0.7</Version>
     </PackageReference>
@@ -221,6 +230,15 @@
     <Content Include="a4ru9-lkcj4-001.ico" />
     <Content Include="tag_dictionary.sqlite">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="webui\index.html">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="webui\app.css">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="webui\app.js">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
   <ItemGroup />

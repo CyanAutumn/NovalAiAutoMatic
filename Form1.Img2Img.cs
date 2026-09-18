@@ -1,31 +1,24 @@
 using System;
-using System.Windows.Forms;
+using System.IO;
 using AutoNai3Tools.utils;
 
 namespace AutoNai3Tools {
     public partial class Form1 {
         #region Img2Img
 
-        private string img2ImgCurrentPath;
+        internal void SetImg2ImgPath(string path) {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) {
+                PushToast("warn", "图片不存在");
+                return;
+            }
 
-        private Img2ImgOptions CaptureImg2ImgOptions() {
-            if (string.IsNullOrEmpty(img2ImgCurrentPath))
-                return null;
-
-            return new Img2ImgOptions(img2ImgCurrentPath, (float)nudImg2ImgStrength.Value,
-                (float)nudImg2ImgNoise.Value);
+            Img2ImgPath = path;
+            PushImg2Img();
         }
 
-        private void picImg2ImgView_Click(object sender, EventArgs e) {
-            var path = Vibe.SelectAndMappingPicToPictureBox(this);
-            if (path != null)
-                img2ImgCurrentPath = path;
-        }
-
-        private void btnImg2ImgDel_Click(object sender, EventArgs e) {
-            img2ImgCurrentPath = null;
-            picImg2ImgView.Image.Dispose();
-            picImg2ImgView.Image = null;
+        internal void ClearImg2Img() {
+            Img2ImgPath = null;
+            PushImg2Img();
         }
 
         #endregion

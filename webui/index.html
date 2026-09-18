@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NovalAi3 AutoMatic</title>
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<div class="app">
+
+  <header class="titlebar" id="titlebar">
+    <div class="brand"><span class="dot"></span>NovalAi3 AutoMatic<span class="ver" id="appVersion"></span></div>
+    <div class="group" style="margin-left:14px">
+      <span class="label">配置</span>
+      <select class="select" id="presetSelect" style="width:200px"></select>
+      <button class="btn sm" id="presetSave">保存</button>
+      <button class="btn sm" id="presetSaveAs">另存</button>
+      <button class="btn sm" id="presetDelete">删除</button>
+      <button class="btn sm" id="presetFolder">目录</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="group">
+      <span class="chip" id="bridgeChip">未连接宿主</span>
+      <span class="chip" id="tokenChip">Token 未配置</span>
+      <button class="btn icon" id="themeBtn" title="切换主题">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+      <button class="winbtn" id="winMin" title="最小化"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M1 6h10" stroke="currentColor" stroke-width="1.2"/></svg></button>
+      <button class="winbtn" id="winMax" title="最大化"><svg width="12" height="12" viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+      <button class="winbtn close" id="winClose" title="关闭"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.2"/></svg></button>
+    </div>
+  </header>
+
+  <div class="body">
+    <nav class="rail" id="rail">
+      <button class="item active" data-page="page-gen"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>生图</button>
+      <button class="item" data-page="page-params"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="8" cy="18" r="2" fill="currentColor" stroke="none"/></svg>生成参数</button>
+      <button class="item" data-page="page-artist"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><circle cx="11" cy="11" r="2"/></svg>画师</button>
+      <button class="item" data-page="page-wildcard"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/><path d="M8 5l-4 2 4 2M16 10l4 2-4 2"/></svg>wildcard</button>
+      <button class="item" data-page="page-vibe"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M5.6 6.6l12.8 10.8M18.4 6.6L5.6 17.4"/></svg>Vibe</button>
+      <button class="item" data-page="page-img2img"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15l4-4 3 3 4-5 7 7"/></svg>图生图</button>
+      <button class="item" data-page="page-director"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2M15 10V8M11 6H9M21 6h-2M18.4 3.6l-1.4 1.4M18.4 8.4l-1.4-1.4M12.6 3.6l1.4 1.4M12.6 8.4l1.4-1.4M4 21l8-8"/></svg>导演工具</button>
+      <div class="sep"></div>
+      <button class="item" data-page="page-settings"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 15a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.5-2.7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.6a2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21 11a2 2 0 1 1 0 4z"/></svg>设置</button>
+      <button class="item" data-page="page-log"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 5h16M4 12h16M4 19h10"/></svg>日志</button>
+      <button class="item" data-page="page-about"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>关于</button>
+      <div class="foot">
+        <div>状态 <b id="railState">空闲</b></div>
+        <div>Anlas <b id="railAnlas">-</b></div>
+      </div>
+    </nav>
+
+    <main>
+      <!-- ============ 生图 ============ -->
+      <section class="page active" id="page-gen">
+        <div class="grid">
+          <div class="col">
+            <div class="card">
+              <header>
+                <h2>正面提示词</h2>
+                <span class="hint" id="posCount"></span>
+                <div class="spacer"></div>
+                <button class="btn sm ghost" id="posHl">权重高亮</button>
+                <button class="btn sm ghost" id="posImport">从 PNG 导入</button>
+                <button class="btn sm ghost" data-clear="posPrompt">清空</button>
+              </header>
+              <div class="content tight ac-anchor">
+                <textarea class="textarea" id="posPrompt" spellcheck="false" rows="4"></textarea>
+                <div class="hl-preview" id="posPreview"></div>
+              </div>
+            </div>
+            <div class="card">
+              <header>
+                <h2>负面提示词</h2>
+                <span class="hint">支持 {} 加权 / [] 减权</span>
+                <div class="spacer"></div>
+                <button class="btn sm ghost" data-clear="negPrompt">清空</button>
+              </header>
+              <div class="content tight ac-anchor">
+                <textarea class="textarea" id="negPrompt" spellcheck="false" rows="4"></textarea>
+                <div class="hl-preview" id="negPreview"></div>
+              </div>
+            </div>
+            <div class="card">
+              <header><h2>预览</h2><div class="spacer"></div><span class="hint" id="previewHint">等待生成</span></header>
+              <div class="content tight">
+                <div class="preview-box" id="previewBox">最近一次生成结果</div>
+                <div class="row" style="margin-top:8px">
+                  <span class="chip info" id="chipSize">-</span>
+                  <span class="chip">seed <b id="chipSeed">-</b></span>
+                  <span class="chip">Steps <b id="chipSteps">-</b></span>
+                  <div class="spacer"></div>
+                  <button class="btn sm" id="openOutput">打开输出目录</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="card">
+              <header><h2>生成参数</h2><div class="spacer"></div><span class="hint">改动即时生效</span></header>
+              <div class="content">
+                <label class="field"><span class="lbl">模型</span><select class="select" id="quickModel"></select></label>
+                <label class="field"><span class="lbl">分辨率</span><select class="select" id="quickSize"></select></label>
+                <div class="kv"><span class="k">Steps</span><div class="row"><input class="range" type="range" id="quickSteps" min="1" max="28" /><span class="range-val" id="quickStepsVal">28</span></div></div>
+                <div class="kv"><span class="k">Guidance</span><div class="row"><input class="range" type="range" id="quickScale" min="0" max="10" step="0.1" /><span class="range-val" id="quickScaleVal">5.0</span></div></div>
+                <div class="two">
+                  <label class="field"><span class="lbl">采样器</span><select class="select" id="quickSampler"></select></label>
+                  <label class="field"><span class="lbl">Noise</span><select class="select" id="quickNoise"></select></label>
+                </div>
+                <div class="kv"><span class="k">Decrisp</span><div class="row"><span class="switch"><input type="checkbox" id="quickDecrisp" /><span class="track"></span></span><span class="note">动态阈值</span></div></div>
+                <div class="kv"><span class="k">固定种子</span><div class="row"><span class="switch"><input type="checkbox" id="quickFixedSeed" /><span class="track"></span></span><input class="input" id="quickSeed" style="width:150px" /><button class="btn sm" id="quickSeedRoll">随机</button></div></div>
+                <div class="row wrap" style="margin-top:6px">
+                  <span class="chip" id="chipModel">-</span>
+                  <span class="chip" id="chipMp">-</span>
+                  <span class="chip info" id="chipCost">-</span>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <header><h2>运行</h2></header>
+              <div class="content">
+                <div class="kv"><span class="k">跑图数量</span><div class="row"><input class="input" type="number" id="quickRunNum" min="1" style="width:90px" /></div></div>
+                <div class="kv"><span class="k">参数固定数量</span><div class="row"><input class="input" type="number" id="quickKeepParams" min="0" style="width:90px" /></div></div>
+                <div class="note">提示词串里可以用 &lt;固定画师&gt;、&lt;随机画师&gt;、&lt;片段名&gt; 占位。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 生成参数 ============ -->
+      <section class="page" id="page-params">
+        <div class="grid wide">
+          <div class="card">
+            <header><h2>生成参数</h2><div class="spacer"></div><span class="hint">把保存过参数的 PNG 拖到窗口里也能导入</span></header>
+            <div class="content" id="paramGroups"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 画师 ============ -->
+      <section class="page" id="page-artist">
+        <div class="grid wide">
+          <div class="card">
+            <header><h2>画师</h2><div class="spacer"></div><span class="hint">在提示词里用 &lt;固定画师&gt; / &lt;随机画师&gt; 引用</span></header>
+            <div class="content">
+              <div class="two">
+                <label class="field"><span class="lbl">固定画师</span><textarea class="textarea" id="artistFixed" spellcheck="false" rows="6"></textarea></label>
+                <label class="field"><span class="lbl">随机画师（每行一组，用 | 分隔同一次抽取的候选）</span><textarea class="textarea" id="artistRandom" spellcheck="false" rows="6"></textarea></label>
+              </div>
+              <div class="note" style="margin-bottom:10px">格式：<code>画师A,{减权[min],减权[max],加权[min],加权[max]}</code>；也支持 <code>画师::0.5</code> 这类双冒号权重。</div>
+              <div class="kv"><span class="k">全局加权 {} Max</span><div class="row"><input class="input" type="number" id="artistIncreaseMax" min="0" max="99" style="width:90px" /></div></div>
+              <div class="kv"><span class="k">全局减权 [] Max</span><div class="row"><input class="input" type="number" id="artistReduceMax" min="0" max="99" style="width:90px" /></div></div>
+              <div class="kv"><span class="k">全局加权 :: Max</span><div class="row"><input class="input" type="number" step="0.1" id="artistIncreaseDcMax" min="0" max="99" style="width:90px" /></div></div>
+              <div class="kv"><span class="k">全局减权 :: Max</span><div class="row"><input class="input" type="number" step="0.1" id="artistReduceDcMax" min="0" max="99" style="width:90px" /></div></div>
+              <div class="kv"><span class="k">随机抽取数量</span><div class="row"><input class="input" type="number" id="artistMin" min="1" style="width:74px" /><span class="note">~</span><input class="input" type="number" id="artistMax" min="1" style="width:74px" /><span class="note">位</span></div></div>
+              <div class="kv"><span class="k">artist: 前缀</span><div class="row"><span class="switch"><input type="checkbox" id="artistModify" /><span class="track"></span></span><span class="note">为所有画师加上 artist: 前缀</span></div></div>
+              <div class="note">官方规则：<code>{}</code> 加权约 1.05 倍、<code>[]</code> 减权约 1/1.05 倍，每个括号影响其右侧的全部内容；<code>n::内容::</code> 数字权重需要 V4 以上，负值需要 V4.5 以上。</div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <!-- ============ wildcard ============ -->
+      <section class="page" id="page-wildcard">
+        <div class="grid">
+          <div class="col">
+            <div class="card">
+              <header><h2>wildcard 片段</h2><div class="spacer"></div><span class="hint">点击一行可把 &lt;片段名&gt; 插入提示词</span></header>
+              <div class="content tight">
+                <table class="grid-table">
+                  <thead><tr><th style="width:180px">片段名</th><th>内容</th></tr></thead>
+                  <tbody id="wildcardBody"></tbody>
+                </table>
+                <div class="note" id="wildcardEmpty" style="padding:8px 4px"></div>
+              </div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="card">
+              <header><h2>片段编辑</h2></header>
+              <div class="content">
+                <label class="field"><span class="lbl">片段名</span><input class="input" id="snippetName" /></label>
+                <label class="field"><span class="lbl">内容（每行一个候选）</span><textarea class="textarea" id="snippetValue" rows="6"></textarea></label>
+                <div class="row"><button class="btn primary" id="snippetAdd">添加</button><button class="btn" id="snippetUpdate">修改</button><button class="btn danger" id="snippetDelete">删除</button></div>
+              </div>
+            </div>
+            <div class="card">
+              <header><h2>目录</h2></header>
+              <div class="content">
+                <label class="field"><span class="lbl">通配符 &lt;&gt; 文件路径</span><input class="input" id="wildcardFolder" /></label>
+                <div class="row"><button class="btn sm" id="wildcardBrowse">浏览…</button><button class="btn sm" id="wildcardOpen">打开目录</button><button class="btn sm" id="wildcardReload">刷新列表</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ Vibe ============ -->
+      <section class="page" id="page-vibe">
+        <div class="grid">
+          <div class="col">
+            <div class="card">
+              <header><h2>参考图列表</h2><div class="spacer"></div><span class="hint">最多 16 个</span></header>
+              <div class="content tight">
+                <div class="row mb"><button class="btn sm primary" id="vibeAdd">添加参考图</button><button class="btn sm" id="vibeBundle">导入 .naiv4vibebundle</button></div>
+                <table class="grid-table">
+                  <thead><tr><th style="width:56px">启用</th><th>名称</th><th style="width:70px">IE</th><th style="width:70px">RS</th><th style="width:76px"></th></tr></thead>
+                  <tbody id="vibeBody"></tbody>
+                </table>
+                <div class="note" id="vibeEmpty" style="padding:8px 4px"></div>
+              </div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="card">
+              <header><h2>选中项</h2><div class="spacer"></div><span class="hint" id="vibeSelName">未选择</span></header>
+              <div class="content">
+                <div class="preview-box sm" id="vibePreview">参考图预览</div>
+                <div class="kv" style="margin-top:10px"><span class="k">信息提取 IE</span><div class="row"><input class="range" type="range" id="vibeIe" min="0" max="1" step="0.01" /><span class="range-val" id="vibeIeVal">1.00</span></div></div>
+                <div class="kv"><span class="k">参考强度 RS</span><div class="row"><input class="range" type="range" id="vibeRs" min="0" max="1" step="0.01" /><span class="range-val" id="vibeRsVal">0.60</span></div></div>
+                <div class="kv"><span class="k">启用</span><div class="row"><span class="switch"><input type="checkbox" id="vibeEnabled" /><span class="track"></span></span></div></div>
+                <div class="row"><button class="btn primary" id="vibeApply">应用修改</button><button class="btn danger" id="vibeRemove">移除选中</button></div>
+                <div class="note" style="margin-top:8px">V4.5 / V5 模型会走 .naiv4vibe 编码缓存，NAI3 直接把参考图转成 base64 发送。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 图生图 ============ -->
+      <section class="page" id="page-img2img">
+        <div class="grid">
+          <div class="col">
+            <div class="card">
+              <header><h2>图生图源图片</h2><div class="spacer"></div><span class="hint" id="img2imgName">未选择</span></header>
+              <div class="content">
+                <div class="preview-box" id="img2imgPreview">未选择图片</div>
+                <div class="row" style="margin-top:8px"><button class="btn primary" id="img2imgPick">选择图片</button><button class="btn danger" id="img2imgClear">清除</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="col">
+            <div class="card">
+              <header><h2>参数</h2></header>
+              <div class="content">
+                <div class="kv"><span class="k">Strength</span><div class="row"><input class="range" type="range" id="img2imgStrength" min="0" max="0.99" step="0.01" /><span class="range-val" id="img2imgStrengthVal">0.01</span></div></div>
+                <div class="kv"><span class="k">Noise</span><div class="row"><input class="range" type="range" id="img2imgNoise" min="0" max="0.99" step="0.01" /><span class="range-val" id="img2imgNoiseVal">0.00</span></div></div>
+                <div class="note">官方文档：Strength 越高越贴近原图；Noise 只影响带噪声的采样器。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 导演工具 ============ -->
+      <section class="page" id="page-director">
+        <div class="grid wide">
+          <div class="card">
+            <header><h2>导演工具</h2><div class="spacer"></div><span class="hint">大尺寸图片会消耗点数</span></header>
+            <div class="content">
+              <div class="pills" id="directorPills" style="margin-bottom:12px">
+                <button class="active" data-tab="0">RemoveBG</button>
+                <button data-tab="1">LineArt</button>
+                <button data-tab="2">Sketch</button>
+                <button data-tab="3">Colorize</button>
+                <button data-tab="4">Emotion</button>
+                <button data-tab="5">Declutter</button>
+              </div>
+              <div class="two">
+                <div>
+                  <div class="preview-box sm" id="directorInput">输入预览</div>
+                  <div class="row" style="margin-top:8px"><button class="btn sm" id="directorPickInput">选择图片</button></div>
+                </div>
+                <div>
+                  <div class="preview-box sm" id="directorOutput">输出预览</div>
+                  <div class="row" style="margin-top:8px"><button class="btn sm" id="directorOpenOutput">打开输出目录</button></div>
+                </div>
+              </div>
+              <div class="two" style="margin-top:12px">
+                <label class="field"><span class="lbl">每张图片处理次数</span><input class="input" type="number" id="directorIterations" min="1" /></label>
+                <label class="field"><span class="lbl">处理范围</span>
+                  <div class="pills" id="directorMode"><button class="active" data-batch="0">处理所选图片</button><button data-batch="1">处理文件夹</button></div>
+                </label>
+              </div>
+              <label class="field" id="directorFolderRow"><span class="lbl">输入文件夹</span>
+                <div class="row"><input class="input grow" id="directorFolder" /><button class="btn" id="directorPickFolder">浏览…</button></div>
+              </label>
+              <div id="directorColorize" class="pane">
+                <div class="two">
+                  <label class="field"><span class="lbl">Colorize Prompt</span><input class="input" id="colorizePrompt" /></label>
+                  <label class="field"><span class="lbl">Derfy</span><select class="select" id="colorizeDefry"></select></label>
+                </div>
+              </div>
+              <div id="directorEmotion" class="pane">
+                <div class="three">
+                  <label class="field"><span class="lbl">Emotion</span><select class="select" id="emotionValue"></select></label>
+                  <label class="field"><span class="lbl">Emotion Prompt</span><input class="input" id="emotionPrompt" /></label>
+                  <label class="field"><span class="lbl">Defry</span><select class="select" id="emotionDefry"></select></label>
+                </div>
+              </div>
+              <div class="row" style="margin-top:6px">
+                <button class="btn primary" id="directorRun">运行</button>
+                <span class="note" id="directorStatus"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 设置 ============ -->
+      <section class="page" id="page-settings">
+        <div class="grid wide">
+          <div class="card">
+            <header><h2>设置</h2><div class="spacer"></div><button class="btn sm" id="settingsQueryAnlas">查询 Anlas 余额</button></header>
+            <div class="content" id="settingGroups"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 日志 ============ -->
+      <section class="page" id="page-log">
+        <div class="grid wide">
+          <div class="card">
+            <div class="log-toolbar">
+              <div class="pills" id="logPills">
+                <button class="active" data-lv="all">全部</button>
+                <button data-lv="info">信息</button>
+                <button data-lv="warn">警告</button>
+                <button data-lv="err">错误</button>
+              </div>
+              <div class="spacer"></div>
+              <span class="note" id="picInfo"></span>
+              <button class="btn sm" id="logQueryAnlas">查询 Anlas 余额</button>
+              <button class="btn sm" id="logClear">清空</button>
+            </div>
+            <div class="log-list" id="logList"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 关于 ============ -->
+      <section class="page" id="page-about">
+        <div class="about">
+          <div class="card">
+            <header><h2>关于 NovalAi3 AutoMatic</h2><div class="spacer"></div><span class="chip" id="aboutVersion"></span></header>
+            <div class="content">
+              <p class="note" style="margin-top:0">随机组合画师串生成画风的批量生成工具，面向训练集场景。</p>
+              <div class="row"><button class="btn sm" id="aboutTutorial">使用文档</button><button class="btn sm" id="aboutRepo">开源地址</button></div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:14px">
+            <header><h2>相关链接</h2></header>
+            <div class="content tight" style="padding:0">
+              <div class="link">NovelAI 官方文档 <a href="#" data-url="https://docs.novelai.net/en/image/">docs.novelai.net/en/image</a></div>
+              <div class="link">加权 / 减权说明 <a href="#" data-url="https://docs.novelai.net/en/image/strengthening-weakening">strengthening-weakening</a></div>
+              <div class="link">Img2Img Strength / Noise <a href="#" data-url="https://docs.novelai.net/en/image/strengthnoise">strengthnoise</a></div>
+              <div class="link">Prompt 在线解析 <a href="#" data-url="https://spell.novelai.dev/">spell.novelai.dev</a></div>
+              <div class="link">在线图片反推 <a href="#" data-url="https://huggingface.co/spaces/SmilingWolf/wd-tagger">wd-tagger</a></div>
+              <div class="link">获取更多随机 prompt <a href="#" data-url="https://pan.baidu.com/s/1CTFTVIo7vKzDRy62LNxMMw?pwd=ktur">百度网盘</a></div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:14px">
+            <header><h2>免责声明</h2></header>
+            <div class="content"><div class="doc-list">本软件仅用于学习跟交流使用，软件永久免费。
+
+开发者不对用户使用本软件可能引发的任何法律责任或损失承担责任。
+用户应对其使用本软件及其结果负全部责任。</div></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="actionbar">
+    <div class="stat"><span class="k">跑图数量</span>
+      <div class="row"><button class="btn sm" id="runMinus">−</button><span class="v" id="runCount">1</span><button class="btn sm" id="runPlus">+</button></div>
+    </div>
+    <div class="stat"><span class="k">本次参数</span><span class="v" id="paramSummary">-</span></div>
+    <div class="spacer"></div>
+    <span class="chip" id="balanceChip">剩余 -</span>
+    <button class="gen-btn" id="genBtn"><span id="genLabel">生成</span><span class="anlas" id="genAnlas"></span></button>
+    <div class="progress"><i id="progressBar"></i></div>
+  </footer>
+</div>
+<div class="toast-wrap" id="toastWrap"></div>
+<div class="modal-mask" id="modalMask">
+  <div class="modal">
+    <header id="modalTitle">提示</header>
+    <div class="content" id="modalBody"></div>
+    <footer id="modalFoot"></footer>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

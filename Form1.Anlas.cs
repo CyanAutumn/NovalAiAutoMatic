@@ -3,130 +3,109 @@ using System.Globalization;
 using System.Threading.Tasks;
 using AutoNai3Tools.body;
 using AutoNai3Tools.utils;
+using Newtonsoft.Json.Linq;
 
 namespace AutoNai3Tools {
     public partial class Form1 {
         private static readonly TimeSpan AnlasQueryCooldown = TimeSpan.FromSeconds(2);
 
         private DateTime lastAnlasQueryUtc = DateTime.MinValue;
-        private string generateButtonBaseText;
-        private bool generateButtonRunning;
         private bool startupAnlasRefreshStarted;
+        private bool anlasQueryBusy;
 
-        /// <summary>记录「生成」按钮的原始文案，并挂上需要刷新预估的时机。</summary>
-        private void InitializeAnlasDisplay() {
-            GenerateButtonBaseTextIfNeeded();
-
-            if (generationController != null) {
-                generationController.ImageReady += (iteration, bitmap) => RefreshAnlasButtonText();
-                generationController.Completed += RefreshAnlasButtonText;
-            }
-
-            RefreshAnlasButtonText();
-        }
-
-        /// <summary>启动后拉一次余额，让按钮上的「剩余」有值。</summary>
+        /// <summary>启动后拉一次余额，让界面上的「剩余」有值。</summary>
         private void BeginStartupAnlasRefresh() {
             if (startupAnlasRefreshStarted || !settingProps.AnlasTracking)
                 return;
 
             startupAnlasRefreshStarted = true;
-            RefreshAnlasBalanceAsync();
+            _ = RefreshAnlasBalanceAsync();
         }
 
         private void OnAnlasTrackingChanged() {
-            GenerateButtonBaseTextIfNeeded();
             if (settingProps.AnlasTracking)
-                RefreshAnlasBalanceAsync();
-            RefreshAnlasButtonText();
+                _ = RefreshAnlasBalanceAsync();
+            PushAnlasEstimate();
         }
 
-        /// <summary>生成开始/结束时切换按钮基准文案（停止 / 生成），并同步刷新 Anlas 信息。</summary>
-        private void SetGenerateButtonRunning(bool running) {
-            generateButtonRunning = running;
-            RefreshAnlasButtonText();
-        }
-
-        /// <summary>把「参数组合的预估消耗 / 剩余总量」拼到「生成」（生成中为「停止」）右侧。</summary>
-        private void RefreshAnlasButtonText() {
-            if (btnGenerate == null || btnGenerate.IsDisposed)
-                return;
-
-            // 生图事件来自后台线程，必须切回 UI 线程再改按钮文案。
-            if (InvokeRequired) {
-                if (!IsHandleCreated || IsDisposed)
-                    return;
-
-                try {
-                    BeginInvoke(new Action(RefreshAnlasButtonText));
-                }
-                catch (InvalidOperationException) {
-                    // 窗口正在关闭，忽略这一次刷新
-                }
-                return;
-            }
-
-            GenerateButtonBaseTextIfNeeded();
-
-            string baseText = generateButtonRunning
-                ? Properties.Resources.Button_Stop
-                : generateButtonBaseText;
-
-            string info = settingProps != null && settingProps.AnlasTracking ? BuildAnlasButtonInfo() : null;
-            btnGenerate.Text = string.IsNullOrEmpty(info)
-                ? baseText
-                : baseText + "    " + info;
-        }
-
-        private void GenerateButtonBaseTextIfNeeded() {
-            if (string.IsNullOrEmpty(generateButtonBaseText))
-                generateButtonBaseText = btnGenerate?.Text ?? string.Empty;
-        }
-
-        private string BuildAnlasButtonInfo() {
-            if (picProps == null || btnGenerate == null)
-                return null;
-
+        /// <summary>当前参数组合的单张消耗：优先用实测缓存，其次用公式估算。</summary>
+        internal int EstimateCurrentCost(out bool measured) {
+            measured = false;
             int width = picProps.Width;
             int height = picProps.Height;
             int steps = picProps.Steps;
             if (width <= 0 || height <= 0 || steps <= 0)
-                return null;
+                return 0;
 
             string model = BodyTools.GetEnumDescription(picProps.Model);
             string key = AnlasCostCache.BuildKey(model, width, height, steps, 1, "generate", null);
-
-            int cost;
-            bool measured = AnlasCostCache.TryGet(key, out cost);
-            if (!measured)
-                cost = AnlasService.EstimateCost(width, height, steps, 1, model);
-
-            string costText = measured
-                ? cost.ToString(CultureInfo.InvariantCulture)
-                : "≈" + cost.ToString(CultureInfo.InvariantCulture);
-
-            var account = AnlasService.LastAccount;
-            string balanceText = account == null
-                ? "?"
-                : account.TotalAnlas.ToString(CultureInfo.InvariantCulture);
-
-            // V5 走的是 Opus 额度条：优先显示本次消耗的额度百分比与剩余额度。
-            bool showQuota = AnlasService.IsV5Model(model) && (account == null || account.UsagePercent > 0);
-            if (showQuota) {
-                double percent = AnlasService.EstimateV5UsagePercent(width, height, steps, 1);
-                string quotaText = string.Format(CultureInfo.InvariantCulture, "额度 {0:0.###}% / {1}",
-                    percent, account == null ? "?" : account.UsagePercent + "%");
-
-                if (cost > 0)
-                    quotaText += string.Format(CultureInfo.InvariantCulture, " + Anlas {0} / {1}", costText, balanceText);
-
-                return quotaText;
+            if (AnlasCostCache.TryGet(key, out int cached)) {
+                measured = true;
+                return cached;
             }
 
-            return string.Format(CultureInfo.InvariantCulture, "Anlas {0} / {1}", costText, balanceText);
+            return AnlasService.EstimateCost(width, height, steps, 1, model);
         }
 
-        private async void RefreshAnlasBalanceAsync() {
+        /// <summary>整轮（跑图数量张）的预计消耗。</summary>
+        internal int EstimateRunCost(int perImageCost, bool measured) {
+            int width = picProps.Width;
+            int height = picProps.Height;
+            int steps = picProps.Steps;
+            int count = Math.Max(1, picProps.RunNum);
+            string model = BodyTools.GetEnumDescription(picProps.Model);
+
+            if (!measured || (count > 1 && AnlasService.IsFreeGeometry(width, height, steps)))
+                return AnlasService.EstimateCost(width, height, steps, count, model);
+
+            return perImageCost * count;
+        }
+
+        internal JObject BuildAnlasJson() {
+            var account = AnlasService.LastAccount;
+            int cost = EstimateCurrentCost(out bool measured);
+            int runCost = EstimateRunCost(cost, measured);
+            string model = BodyTools.GetEnumDescription(picProps.Model);
+            bool isV5 = AnlasService.IsV5Model(model);
+
+            var json = new JObject {
+                ["tracking"] = settingProps.AnlasTracking,
+                ["busy"] = anlasQueryBusy,
+                ["model"] = model,
+                ["isV5"] = isV5,
+                ["samples"] = Math.Max(1, picProps.RunNum),
+                ["cost"] = cost,
+                ["runCost"] = runCost,
+                ["measured"] = measured,
+                ["quotaPercent"] = isV5
+                    ? AnlasService.EstimateV5UsagePercent(picProps.Width, picProps.Height, picProps.Steps,
+                        Math.Max(1, picProps.RunNum))
+                    : 0d,
+                ["v5BaselinePercent"] = isV5
+                    ? AnlasService.EstimateV5UsagePercent(picProps.Width, picProps.Height, picProps.Steps, 1)
+                    : 0d,
+                ["hasAccount"] = account != null
+            };
+
+            if (account != null) {
+                json["total"] = account.TotalAnlas;
+                json["subscription"] = account.SubscriptionAnlas;
+                json["purchased"] = account.PurchasedAnlas;
+                json["usagePercent"] = account.UsagePercent;
+                json["tier"] = account.Tier;
+                json["tierName"] = account.TierName;
+                json["expiresAt"] = account.ExpiresAtText;
+                json["describe"] = account.Describe();
+            }
+
+            return json;
+        }
+
+        internal void PushAnlasEstimate() {
+            Post("anlas", BuildAnlasJson());
+        }
+
+        private async Task RefreshAnlasBalanceAsync() {
             try {
                 await QueryAnlasAsync(false);
             }
@@ -136,24 +115,29 @@ namespace AutoNai3Tools {
             }
         }
 
-        /// <summary>查询余额；manual 为 true 时由「查询Anlas余额」按钮触发，失败会写入错误日志。</summary>
-        private async Task<bool> QueryAnlasAsync(bool manual) {
+        /// <summary>查询余额；manual 为 true 时由「查询余额」按钮触发，失败会写入错误日志。</summary>
+        internal async Task<bool> QueryAnlasAsync(bool manual) {
             string token = settingProps?.Token;
             if (string.IsNullOrWhiteSpace(token)) {
-                if (manual)
+                if (manual) {
                     Logger.Warn("查询 Anlas 失败：请先填写 NovelAI Token");
+                    PushToast("warn", "请先填写 NovelAI Token");
+                }
                 return false;
             }
 
             if (manual) {
                 if (DateTime.UtcNow - lastAnlasQueryUtc < AnlasQueryCooldown) {
                     Logger.Warn("查询过于频繁，请稍后再试");
+                    PushToast("warn", "查询过于频繁，请稍后再试");
                     return false;
                 }
 
                 lastAnlasQueryUtc = DateTime.UtcNow;
-                btnQueryAnlas.Enabled = false;
             }
+
+            anlasQueryBusy = true;
+            PushAnlasEstimate();
 
             try {
                 AnlasService.ResetAvailability();
@@ -167,29 +151,28 @@ namespace AutoNai3Tools {
                             ("purchasedAnlas", account.PurchasedAnlas),
                             ("tier", account.Tier),
                             ("usagePercent", account.UsagePercent)));
+                    PushToast("ok", string.Format(CultureInfo.InvariantCulture, "余额 {0}（{1}）",
+                        account.TotalAnlas, account.TierName));
                 }
 
                 return true;
             }
             catch (Exception ex) {
-                if (manual)
+                if (manual) {
                     Logger.Error("查询 Anlas 失败", exception: ex,
                         context: Logger.Context(("endpoint", "/user/subscription")));
-                else
+                    PushToast("err", "查询失败：" + ex.Message);
+                }
+                else {
                     Logger.Warn("刷新 Anlas 余额失败",
                         context: Logger.Context(("endpoint", "/user/subscription"), ("reason", ex.Message)));
+                }
                 return false;
             }
             finally {
-                if (manual)
-                    btnQueryAnlas.Enabled = true;
-
-                RefreshAnlasButtonText();
+                anlasQueryBusy = false;
+                PushAnlasEstimate();
             }
-        }
-
-        private async void btnQueryAnlas_Click(object sender, EventArgs e) {
-            await QueryAnlasAsync(true);
         }
     }
 }

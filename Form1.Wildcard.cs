@@ -1,5 +1,6 @@
 using System;
-using System.Windows.Forms;
+using System.Collections.Generic;
+using System.IO;
 using AutoNai3Tools.Services;
 using AutoNai3Tools.utils;
 
@@ -7,116 +8,108 @@ namespace AutoNai3Tools {
     public partial class Form1 {
         #region Wildcard
 
-        private void InitTagSnippetDGV() {
+        internal void ReloadWildcards() {
+            wildcardItems.Clear();
+            string folderPath = picProps.WildcardFolderPath;
             try {
-                string folderPath = picProps.WildcardFolderPath;
-                dgvTagSnippet.Rows.Clear();
-                var snippets = wildcardService.LoadSnippets(folderPath);
-                foreach (var snippet in snippets)
-                    dgvTagSnippet.Rows.Add(snippet.Name, snippet.Content);
+                if (!string.IsNullOrWhiteSpace(folderPath) && Directory.Exists(folderPath)) {
+                    foreach (var snippet in wildcardService.LoadSnippets(folderPath))
+                        wildcardItems.Add(snippet);
+                }
             }
             catch (Exception ex) {
                 Logger.Warn("未能加载 wildcard 片段文件",
-                    context: Logger.Context(("folder", picProps.WildcardFolderPath), ("reason", ex.Message)));
+                    context: Logger.Context(("folder", folderPath), ("reason", ex.Message)));
             }
+
+            PushWildcards();
         }
 
-        private void btnTagSnippetAdd_Click(object sender, EventArgs e) {
+        internal void AddWildcard(string name, string content) {
             string folderPath = picProps.WildcardFolderPath;
-            string name = txtTagSnippetName.Text;
             if (string.IsNullOrWhiteSpace(folderPath)) {
-                MessageBox.Show(Properties.Resources.Msg_WildcardFolderNotConfigured, Properties.Resources.Title_Info,
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                PushToast("warn", Properties.Resources.Msg_WildcardFolderNotConfigured);
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(name)) {
-                Logger.Warn("片段名不能为空",
-                    context: Logger.Context(("action", "SnippetAdd")));
+                Logger.Warn("片段名不能为空", context: Logger.Context(("action", "SnippetAdd")));
+                PushToast("warn", "片段名不能为空");
                 return;
             }
 
             try {
-                var snippet = wildcardService.AddSnippet(folderPath, name, txtTagSnippetValue.Text);
-                dgvTagSnippet.Rows.Add(snippet.Name, snippet.Content);
-                txtTagSnippetName.Text = snippet.Name;
-                txtTagSnippetValue.Text = snippet.Content;
+                wildcardService.AddSnippet(folderPath, name, content);
+                ReloadWildcards();
                 Logger.Info("片段已新增",
-                    context: Logger.Context(("snippet", snippet.Name), ("folder", folderPath)));
+                    context: Logger.Context(("snippet", name), ("folder", folderPath)));
+                PushToast("ok", $"片段「{name}」已新增");
             }
             catch (Exception ex) {
                 Logger.Warn("添加片段失败",
                     context: Logger.Context(("snippet", name), ("reason", ex.Message)));
-                MessageBox.Show(string.Format(Properties.Resources.Msg_AddSnippetFailed, ex.Message),
-                    Properties.Resources.Title_Info, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                PushToast("err", string.Format(Properties.Resources.Msg_AddSnippetFailed, ex.Message));
             }
         }
 
-        private void btnTagSnippetEdit_Click(object sender, EventArgs e) {
-            if (dgvTagSnippet.CurrentRow == null) {
-                Logger.Warn("未选择要编辑的片段",
-                    context: Logger.Context(("action", "SnippetEdit")));
-                return;
-            }
-
+        internal void UpdateWildcard(string name, string content) {
             string folderPath = picProps.WildcardFolderPath;
             if (string.IsNullOrWhiteSpace(folderPath)) {
-                MessageBox.Show(Properties.Resources.Msg_WildcardFolderNotConfigured, Properties.Resources.Title_Info,
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                PushToast("warn", Properties.Resources.Msg_WildcardFolderNotConfigured);
                 return;
             }
 
-            string fileName = dgvTagSnippet.CurrentRow.Cells[0].Value?.ToString();
-            if (string.IsNullOrWhiteSpace(fileName)) {
-                Logger.Warn("未找到要编辑的片段",
-                    context: Logger.Context(("action", "SnippetEdit")));
+            if (string.IsNullOrWhiteSpace(name)) {
+                Logger.Warn("未选择要编辑的片段", context: Logger.Context(("action", "SnippetEdit")));
+                PushToast("warn", "未选择要编辑的片段");
                 return;
             }
 
             try {
-                var snippet = wildcardService.UpdateSnippet(folderPath, fileName, txtTagSnippetValue.Text);
-                dgvTagSnippet.CurrentRow.Cells[1].Value = snippet.Content;
-                txtTagSnippetValue.Text = snippet.Content;
-                Logger.Info("片段已更新",
-                    context: Logger.Context(("snippet", snippet.Name)));
+                wildcardService.UpdateSnippet(folderPath, name, content);
+                ReloadWildcards();
+                Logger.Info("片段已更新", context: Logger.Context(("snippet", name)));
+                PushToast("ok", $"片段「{name}」已更新");
             }
             catch (Exception ex) {
                 Logger.Warn("更新片段失败",
-                    context: Logger.Context(("snippet", fileName), ("reason", ex.Message)));
-                MessageBox.Show(string.Format(Properties.Resources.Msg_UpdateSnippetFailed, ex.Message),
-                    Properties.Resources.Title_Info, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    context: Logger.Context(("snippet", name), ("reason", ex.Message)));
+                PushToast("err", string.Format(Properties.Resources.Msg_UpdateSnippetFailed, ex.Message));
             }
         }
 
-        private void btnTagSnippetDelete_Click(object sender, EventArgs e) {
-            if (dgvTagSnippet.CurrentRow != null) {
-                int rowIndex = dgvTagSnippet.CurrentRow.Index;
-                string fileName = dgvTagSnippet.Rows[dgvTagSnippet.CurrentRow.Index].Cells[0].Value.ToString();
-                string folderPath = picProps.WildcardFolderPath;
-                try {
-                    wildcardService.DeleteSnippet(folderPath, fileName);
-                    dgvTagSnippet.Rows.RemoveAt(rowIndex);
-                }
-                catch (Exception ex) {
-                    Logger.Warn("删除片段失败",
-                        context: Logger.Context(("snippet", fileName), ("reason", ex.Message)));
-                    MessageBox.Show(string.Format(Properties.Resources.Msg_DeleteSnippetFailed, ex.Message),
-                        Properties.Resources.Title_Info, MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
+        internal void DeleteWildcard(string name) {
+            if (string.IsNullOrWhiteSpace(name)) {
+                Logger.Warn("未选择要删除的片段", context: Logger.Context(("action", "SnippetDelete")));
+                PushToast("warn", "未选择要删除的片段");
+                return;
             }
-            else {
-                Logger.Warn("未选择要删除的片段",
-                    context: Logger.Context(("action", "SnippetDelete")));
+
+            try {
+                wildcardService.DeleteSnippet(picProps.WildcardFolderPath, name);
+                ReloadWildcards();
+                PushToast("ok", $"片段「{name}」已删除");
+            }
+            catch (Exception ex) {
+                Logger.Warn("删除片段失败",
+                    context: Logger.Context(("snippet", name), ("reason", ex.Message)));
+                PushToast("err", string.Format(Properties.Resources.Msg_DeleteSnippetFailed, ex.Message));
             }
         }
 
-        private void dgvTagSnippet_CellClick(object sender, DataGridViewCellEventArgs e) {
-            if (e.RowIndex >= 0) {
-                DataGridViewRow selectedRow = dgvTagSnippet.Rows[e.RowIndex];
-                txtTagSnippetName.Text = selectedRow.Cells[0].Value.ToString();
-                txtTagSnippetValue.Text = selectedRow.Cells[1].Value.ToString();
-                string cellPrompt = "<" + selectedRow.Cells[0].Value.ToString().Replace(".txt", "") + ">";
-                Tools.InsertTextToTextBox(txtPrompt, cellPrompt);
+        internal void OpenWildcardFolder() {
+            string folderPath = picProps.WildcardFolderPath;
+            if (string.IsNullOrWhiteSpace(folderPath))
+                return;
+
+            try {
+                if (!Directory.Exists(folderPath))
+                    Directory.CreateDirectory(folderPath);
+                System.Diagnostics.Process.Start(folderPath);
+            }
+            catch (Exception ex) {
+                Logger.Warn("无法打开 wildcard 目录",
+                    context: Logger.Context(("path", folderPath), ("reason", ex.Message)));
             }
         }
 

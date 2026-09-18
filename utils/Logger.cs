@@ -4,7 +4,6 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
-using System.Windows.Forms;
 using log4net;
 
 namespace AutoNai3Tools.utils {
@@ -32,6 +31,10 @@ namespace AutoNai3Tools.utils {
     internal interface ILogSpacerSink {
         void InsertSpacer();
     }
+    /// <summary>由前端实现：接收「当前图片信息」那一行的内容。</summary>
+    internal interface IPicInfoSink {
+        void UpdatePicInfo(string message);
+    }
 
     internal sealed class LogEntry {
         public LogEntry(LogLevel level, string message, string category, Exception exception = null,
@@ -58,18 +61,18 @@ namespace AutoNai3Tools.utils {
     internal static class Logger {
         private static readonly object SyncRoot = new object();
         private static readonly List<ILogSink> Sinks = new List<ILogSink>();
-        private static UiLogSink uiSink;
+        private static ILogSink uiSink;
         private static bool initialized;
 
-        public static void Initialize(Form1 form) {
-            if (form == null)
-                throw new ArgumentNullException(nameof(form));
+        public static void Initialize(ILogSink sink) {
+            if (sink == null)
+                throw new ArgumentNullException(nameof(sink));
 
             lock (SyncRoot) {
                 Sinks.Clear();
-                uiSink = new UiLogSink(form.txtLog, form.txtPicInfo);
+                uiSink = sink;
                 Sinks.Add(new Log4NetSink());
-                Sinks.Add(uiSink);
+                Sinks.Add(sink);
                 initialized = true;
             }
         }
@@ -174,7 +177,7 @@ namespace AutoNai3Tools.utils {
         }
 
         public static void PicInfo(string message) {
-            uiSink?.UpdatePicInfo(message);
+            (uiSink as IPicInfoSink)?.UpdatePicInfo(message);
         }
 
         public static void Spacer() {
@@ -230,90 +233,5 @@ namespace AutoNai3Tools.utils {
             }
         }
 
-        private class UiLogSink : ILogSink, ILogSpacerSink {
-            private const int MaxLogLines = 500;
-            private readonly TextBox logTextBox;
-            private readonly TextBox picInfoTextBox;
-
-            public UiLogSink(TextBox logTextBox, TextBox picInfoTextBox) {
-                this.logTextBox = logTextBox ?? throw new ArgumentNullException(nameof(logTextBox));
-                this.picInfoTextBox = picInfoTextBox;
-            }
-
-            public LogSinkCapabilities Capabilities => LogSinkCapabilities.Ui;
-
-            public bool IsEnabled(LogLevel level) => logTextBox != null && !logTextBox.IsDisposed;
-
-            public void Write(LogEntry entry) {
-                ExecuteOnUi(() => Append(entry));
-            }
-
-            public void UpdatePicInfo(string message) {
-                ExecuteOnUi(() => {
-                    if (picInfoTextBox == null || picInfoTextBox.IsDisposed)
-                        return;
-                    picInfoTextBox.Text = message ?? string.Empty;
-                    picInfoTextBox.SelectionStart = picInfoTextBox.TextLength;
-                    picInfoTextBox.ScrollToCaret();
-                });
-            }
-
-            private void Append(LogEntry entry) {
-                if (logTextBox == null || logTextBox.IsDisposed)
-                    return;
-
-                string formatted = RenderEntry(entry, includeContext: false);
-                logTextBox.AppendText(formatted + Environment.NewLine);
-                TrimLogLines();
-                logTextBox.SelectionStart = logTextBox.TextLength;
-                logTextBox.ScrollToCaret();
-
-                if (picInfoTextBox != null && !picInfoTextBox.IsDisposed) {
-                    picInfoTextBox.Text = formatted;
-                    picInfoTextBox.SelectionStart = picInfoTextBox.TextLength;
-                    picInfoTextBox.ScrollToCaret();
-                }
-            }
-
-            private void ExecuteOnUi(Action action) {
-                if (logTextBox == null || logTextBox.IsDisposed)
-                    return;
-
-                if (logTextBox.InvokeRequired)
-                    logTextBox.BeginInvoke(action);
-                else
-                    action();
-            }
-
-            public void InsertSpacer() {
-                ExecuteOnUi(() => {
-                    if (logTextBox == null || logTextBox.IsDisposed)
-                        return;
-
-                    if (logTextBox.TextLength > 0)
-                        logTextBox.AppendText(Environment.NewLine);
-
-                    logTextBox.SelectionStart = logTextBox.TextLength;
-                    logTextBox.ScrollToCaret();
-                });
-            }
-
-            private void TrimLogLines() {
-                if (logTextBox == null || logTextBox.IsDisposed)
-                    return;
-
-                var lines = logTextBox.Lines;
-                if (lines == null)
-                    return;
-
-                int excess = lines.Length - MaxLogLines;
-                if (excess <= 0)
-                    return;
-
-                var trimmed = lines.Skip(excess).ToArray();
-                logTextBox.Lines = trimmed;
-                logTextBox.SelectionStart = logTextBox.TextLength;
-            }
-        }
     }
 }

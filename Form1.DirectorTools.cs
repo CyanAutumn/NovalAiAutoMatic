@@ -1,138 +1,82 @@
 using System;
-using System.Drawing;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Windows.Forms;
 using AutoNai3Tools.utils;
 
 namespace AutoNai3Tools {
     public partial class Form1 {
         #region Director Tools
 
-        private string directorToolsRemoveBGInputPath;
+        private static readonly string[] DirectorImageExtensions =
+            { ".xbm", ".tif", ".ico", ".jpg", ".jpeg", ".png", ".gif", ".webp" };
 
-        private DirectorToolExecutionOptions CaptureDirectorToolOptions() {
+        internal DirectorToolExecutionOptions CaptureDirectorToolOptions() {
             return new DirectorToolExecutionOptions {
-                Iterations = (int)nudLineArtParseNum.Value,
-                ColorizePrompt = txtColorizePrompt.Text,
-                ColorizeDefry = cmbColorizeDerfy.SelectedIndex,
-                Emotion = cmbEmotionEmotion.Text,
-                EmotionPrompt = txtEmotionPrompt.Text,
-                EmotionDefry = cmbEmotionDefry.SelectedIndex,
+                Iterations = Math.Max(1, DirectorIterations),
+                ColorizePrompt = ColorizePrompt ?? string.Empty,
+                ColorizeDefry = ColorizeDefry,
+                Emotion = EmotionValue ?? string.Empty,
+                EmotionPrompt = EmotionPrompt ?? string.Empty,
+                EmotionDefry = EmotionDefry,
                 Token = settingProps.Token,
                 Proxy = settingProps.Proxy
             };
         }
 
-        private void picDirectorToolsRemoveBGInput_Click(object sender, EventArgs e) {
-            var path = Vibe.SelectAndMappingPicToPictureBox(this);
-            if (path != null)
-                directorToolsRemoveBGInputPath = path;
-        }
-
-        private async Task ParseLineArtSignAsync(int type) {
-            if (directorToolsRemoveBGInputPath == null) {
-                MessageBox.Show(Properties.Resources.Msg_SelectImageFirst, Properties.Resources.Title_Info,
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
+        internal async Task RunDirectorToolAsync() {
             var options = CaptureDirectorToolOptions();
-            await directorToolController.RunSingleAsync(directorToolsRemoveBGInputPath, type, options);
-        }
 
-        private async Task ParseLineArtFolderAsync(int type) {
-            string folderPath = txtLineArtInputFolder.Text;
-            if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath)) {
-                MessageBox.Show(Properties.Resources.Msg_SelectValidInputFolder, Properties.Resources.Title_Info,
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            string[] validExtensions = { ".xbm", "tif", "ico", ".jpg", ".jpeg", ".png", ".gif", ".webp" };
-            var files = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories)
-                .Where(file => validExtensions.Contains(Path.GetExtension(file).ToLower())).ToList();
-
-            if (files.Count == 0) {
-                MessageBox.Show(Properties.Resources.Msg_NoImagesInFolder, Properties.Resources.Title_Info,
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            var options = CaptureDirectorToolOptions();
-            await directorToolController.RunBatchAsync(files, type, options);
-        }
-
-        private void ReplacePictureBoxImage(PictureBox pictureBox, Image newImage) {
-            if (pictureBox.Image != null) {
-                pictureBox.Image.Dispose();
-                pictureBox.Image = null;
-            }
-
-            if (newImage != null)
-                pictureBox.Image = newImage;
-        }
-
-        private async void btnDirectorToolsRemoveBGRun_Click(object sender, EventArgs e) {
-            try {
-                switch (tabDirectorTools.SelectedIndex) {
-                    case 0:
-                        await ParseLineArtSignAsync(0);
-                        break;
-                    case 1:
-                        if (rdoLineArtParseSignPic.Checked)
-                            await ParseLineArtSignAsync(1);
-                        else if (rdoLineArtParseFolderPic.Checked)
-                            await ParseLineArtFolderAsync(1);
-
-                        break;
-                    case 2:
-                        if (rdoLineArtParseSignPic.Checked)
-                            await ParseLineArtSignAsync(2);
-                        else if (rdoLineArtParseFolderPic.Checked)
-                            await ParseLineArtFolderAsync(2);
-
-                        break;
-                    case 3:
-                        if (rdoLineArtParseSignPic.Checked)
-                            await ParseLineArtSignAsync(3);
-                        else if (rdoLineArtParseFolderPic.Checked)
-                            await ParseLineArtFolderAsync(3);
-
-                        break;
-                    case 4:
-                        if (rdoLineArtParseSignPic.Checked)
-                            await ParseLineArtSignAsync(4);
-                        else if (rdoLineArtParseFolderPic.Checked)
-                            await ParseLineArtFolderAsync(4);
-
-                        break;
-                    case 5:
-                        if (rdoLineArtParseSignPic.Checked)
-                            await ParseLineArtSignAsync(5);
-                        else if (rdoLineArtParseFolderPic.Checked)
-                            await ParseLineArtFolderAsync(5);
-
-                        break;
+            if (DirectorBatchMode) {
+                string folderPath = DirectorFolderPath;
+                if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath)) {
+                    PushToast("warn", Properties.Resources.Msg_SelectValidInputFolder);
+                    return;
                 }
+
+                List<string> files;
+                try {
+                    files = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories)
+                        .Where(file => DirectorImageExtensions.Contains(Path.GetExtension(file).ToLowerInvariant()))
+                        .ToList();
+                }
+                catch (Exception ex) {
+                    Logger.Error("读取导演工具输入目录失败", exception: ex,
+                        context: Logger.Context(("folder", folderPath)));
+                    PushToast("err", "读取目录失败：" + ex.Message);
+                    return;
+                }
+
+                if (files.Count == 0) {
+                    PushToast("warn", Properties.Resources.Msg_NoImagesInFolder);
+                    return;
+                }
+
+                await directorToolController.RunBatchAsync(files, DirectorTab, options);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(DirectorInputPath) || !File.Exists(DirectorInputPath)) {
+                PushToast("warn", Properties.Resources.Msg_SelectImageFirst);
+                return;
+            }
+
+            await directorToolController.RunSingleAsync(DirectorInputPath, DirectorTab, options);
+        }
+
+        internal void OpenOutputFolder() {
+            try {
+                string path = picProps.OutputPath;
+                if (string.IsNullOrWhiteSpace(path))
+                    return;
+                if (!Directory.Exists(path))
+                    Directory.CreateDirectory(path);
+                System.Diagnostics.Process.Start(path);
             }
             catch (Exception ex) {
-                Logger.Error("导演工具运行失败", exception: ex,
-                    context: Logger.Context(("tabIndex", tabDirectorTools.SelectedIndex)));
-                MessageBox.Show(Properties.Resources.Msg_DirectorToolFailed, Properties.Resources.Title_Error,
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void picDirectorToolsRemoveBGOutput_Click(object sender, EventArgs e) {
-            System.Diagnostics.Process.Start(picProps.OutputPath);
-        }
-
-        private void btnSelectLineArtInputFolderPath_Click(object sender, EventArgs e) {
-            string folderPath = Tools.SelectFolder(txtLineArtInputFolder.Text);
-            if (folderPath != null) {
-                txtLineArtInputFolder.Text = folderPath;
+                Logger.Warn("无法打开输出目录",
+                    context: Logger.Context(("path", picProps.OutputPath), ("reason", ex.Message)));
             }
         }
 

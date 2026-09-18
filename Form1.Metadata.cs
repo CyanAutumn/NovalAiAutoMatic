@@ -1,60 +1,67 @@
-using AutoNai3Tools.utils;
-using Newtonsoft.Json.Linq;
 using System;
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
 using System.Reflection;
-using System.Windows.Forms;
+using AutoNai3Tools.utils;
+using Newtonsoft.Json.Linq;
 
 namespace AutoNai3Tools {
     public partial class Form1 {
-        private void InitializeMetadataDragDrop() {
-            ConfigureMetadataDropTarget(tabPage2);
-            ConfigureMetadataDropTarget(panel6);
-            ConfigureMetadataDropTarget(propertyGrid1);
-        }
+        #region 从 PNG 导入生成参数
 
-        private void ConfigureMetadataDropTarget(Control control) {
-            if (control == null)
-                return;
-
-            control.AllowDrop = true;
-            control.DragEnter += MetadataDropTarget_DragEnter;
-            control.DragDrop += MetadataDropTarget_DragDrop;
-        }
-
-        private void MetadataDropTarget_DragEnter(object sender, DragEventArgs e) {
-            if (e.Data?.GetDataPresent(DataFormats.FileDrop) == true) {
-                e.Effect = DragDropEffects.Copy;
+        internal void ImportMetadataFromFile(string filePath) {
+            if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) {
+                PushToast("warn", "文件不存在");
                 return;
             }
 
-            e.Effect = DragDropEffects.None;
-        }
-
-        private void MetadataDropTarget_DragDrop(object sender, DragEventArgs e) {
-            if (!(e.Data?.GetData(DataFormats.FileDrop) is string[] files) || files.Length == 0)
-                return;
-
-            string filePath = files[0];
-            ImportGenerationMetadataFromImage(filePath);
-        }
-
-        private void ImportGenerationMetadataFromImage(string filePath) {
-            if (!ImageSourceMetadataReader.TryReadGenerationMetadata(filePath, out JObject metadata, out string sourceLocation,
-                    out string errorMessage)) {
+            if (!ImageSourceMetadataReader.TryReadGenerationMetadata(filePath, out JObject metadata,
+                    out string sourceLocation, out string errorMessage)) {
                 Logger.Warn("读取源数据失败",
                     context: Logger.Context(("file", filePath), ("reason", errorMessage ?? "unknown")));
-                MessageBox.Show(errorMessage ?? "无法读取图片源数据。", Properties.Resources.Title_Prompt,
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                PushToast("warn", errorMessage ?? "无法读取图片源数据。");
                 return;
             }
 
             ApplyMetadataToUi(metadata);
-            propertyGrid1.Refresh();
-            Logger.PicInfo($"源数据位置: {sourceLocation}");
+            PushState();
+            RecordPicInfo($"源数据位置: {sourceLocation}");
             Logger.Info("已按图片源数据更新生成参数",
                 context: Logger.Context(("file", filePath), ("source", sourceLocation)));
+            PushToast("ok", "已按图片源数据更新生成参数");
+        }
+
+        /// <summary>接收前端拖入的图片（base64），落到临时文件后复用原有的源数据解析。</summary>
+        internal void ImportMetadataFromBase64(string fileName, string base64) {
+            if (string.IsNullOrWhiteSpace(base64)) {
+                PushToast("warn", "文件内容为空");
+                return;
+            }
+
+            string tempDir = Path.Combine(AppPaths.LocalRoot, "temp");
+            string path = null;
+            try {
+                Directory.CreateDirectory(tempDir);
+                string safeName = string.IsNullOrWhiteSpace(fileName) ? "drop.png" : Path.GetFileName(fileName);
+                path = Path.Combine(tempDir, Guid.NewGuid().ToString("N").Substring(0, 8) + "_" + safeName);
+                File.WriteAllBytes(path, Convert.FromBase64String(base64));
+                ImportMetadataFromFile(path);
+            }
+            catch (Exception ex) {
+                Logger.Warn("导入拖入的图片失败",
+                    context: Logger.Context(("reason", ex.Message)));
+                PushToast("err", "导入失败：" + ex.Message);
+            }
+            finally {
+                try {
+                    if (path != null && File.Exists(path))
+                        File.Delete(path);
+                }
+                catch {
+                    // 临时文件删除失败可以忽略
+                }
+            }
         }
 
         private void ApplyMetadataToUi(JObject metadata) {
@@ -62,9 +69,9 @@ namespace AutoNai3Tools {
                 return;
 
             if (TryGetString(metadata, "prompt", out string prompt))
-                txtPrompt.Text = prompt;
+                PromptText = prompt;
             if (TryGetString(metadata, "uc", out string uc))
-                txtNegativePrompt.Text = uc;
+                NegativePromptText = uc;
 
             if (TryGetInt(metadata, "steps", out int steps))
                 picProps.Steps = steps;
@@ -108,7 +115,8 @@ namespace AutoNai3Tools {
             }
 
             if (TryGetDouble(metadata, "skip_cfg_above_sigma", out double skipCfgAboveSigma)) {
-                bool deliberateEulerAncestralBug = TryGetBool(metadata, "deliberate_euler_ancestral_bug", out bool bug) && bug;
+                bool deliberateEulerAncestralBug =
+                    TryGetBool(metadata, "deliberate_euler_ancestral_bug", out bool bug) && bug;
                 bool preferBrownian = TryGetBool(metadata, "prefer_brownian", out bool brownian) && brownian;
                 if (!deliberateEulerAncestralBug && preferBrownian) {
                     picProps.Variety = VarietyOptions.自定义_风险参数;
@@ -226,5 +234,7 @@ namespace AutoNai3Tools {
 
             return false;
         }
+
+        #endregion
     }
 }

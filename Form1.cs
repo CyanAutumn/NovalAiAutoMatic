@@ -1,68 +1,119 @@
-﻿using AutoNai3Tools.Services;
-using AutoNai3Tools.utils;
 using System;
-using System.ComponentModel;
+using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using AutoNai3Tools.Controllers;
+using AutoNai3Tools.Services;
+using AutoNai3Tools.utils;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
+using Newtonsoft.Json.Linq;
 
 namespace AutoNai3Tools {
+    /// <summary>
+    /// 主窗口：整个界面已经换成 WebView2 承载的 HTML/CSS/JS，
+    /// 这个类只负责「窗口外壳 + 业务逻辑 + 与前端通信」。
+    /// </summary>
     public partial class Form1 : Form {
-        public int runNum;
+        private const int WM_NCHITTEST = 0x84;
+        private const int WM_NCLBUTTONDOWN = 0xA1;
+        private const int HTCLIENT = 1;
+        private const int HTCAPTION = 2;
+        private const int HTLEFT = 10;
+        private const int HTRIGHT = 11;
+        private const int HTTOP = 12;
+        private const int HTTOPLEFT = 13;
+        private const int HTTOPRIGHT = 14;
+        private const int HTBOTTOM = 15;
+        private const int HTBOTTOMLEFT = 16;
+        private const int HTBOTTOMRIGHT = 17;
+
+        private const int ResizeAreaSize = 6;
+        private const int MaxBufferedLogLines = 500;
+
+        public int runNum = 1;
         public PicProperty picProps = new PicProperty();
         public SettingProperty settingProps = new SettingProperty();
-        private readonly GenerationController generationController;
-        private readonly IGenerationDataProvider generationDataProvider;
-        private readonly DirectorToolController directorToolController;
-        private readonly IConfigService configService;
-        private readonly IWildcardService wildcardService;
+
+        internal readonly GenerationController generationController;
+        internal readonly DirectorToolController directorToolController;
+        internal readonly IConfigService configService;
+        internal readonly IWildcardService wildcardService;
+
+        private readonly GenerationUiDataProvider generationDataProvider;
+        private readonly WebUiLogSink logSink;
+        private readonly List<JObject> bufferedLogs = new List<JObject>();
+        private readonly object logLock = new object();
+
         private TagDatabase tagDatabase;
-        private AutoCompleteHelper autoCompleteHelper;
+        private WebView2 webView;
+        private bool webUiReady;
+        private string lastPicInfo = string.Empty;
+
+        [DllImport("user32.dll")]
+        private static extern bool ReleaseCapture();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
         public Form1() {
             InitializeComponent();
-            InitializeMetadataDragDrop();
-            ApplyLocalization();
-            SyncWindowTitleVersion();
+
+            FormBorderStyle = FormBorderStyle.None;
+            StartPosition = FormStartPosition.CenterScreen;
+            MinimumSize = new Size(1100, 720);
+            Size = new Size(1440, 900);
+            BackColor = Color.FromArgb(13, 15, 19);
+            KeyPreview = true;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer,
                 true);
             UpdateStyles();
-            EnableDoubleBuffer(this);
-            Control.CheckForIllegalCrossThreadCalls = false;
+
+            logSink = new WebUiLogSink(this);
+            Logger.Initialize(logSink);
 
             configService = new ConfigService();
             wildcardService = new WildcardService();
 
-            RefreshConfig();
-            InitGrpEventArgs();
-            cmbColorizeDerfy.SelectedIndex = 0;
-            cmbEmotionEmotion.SelectedIndex = 0;
-            cmbEmotionDefry.SelectedIndex = 0;
-            Logger.Initialize(this);
-            tabControl2.TabPages.Remove(tabPage15);
-            tabControl2.TabPages.Remove(tabPage18);
-            propertyGrid1.SelectedObject = picProps;
-            propertyGridSettings.SelectedObject = settingProps;
-            propertyGridSettings.PropertyValueChanged += HandleSettingsPropertyValueChanged;
+            SyncWindowTitleVersion();
+
+            try {
+                string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tag_dictionary.sqlite");
+                tagDatabase = new TagDatabase(dbPath);
+            }
+            catch (Exception ex) {
+                Logger.Warn($"标签库加载失败：{ex.Message}");
+            }
+
+            LoadConfigs();
 
             generationDataProvider = new GenerationUiDataProvider(
                 picProps,
                 settingProps,
                 this,
-                () => txtPrompt.Text,
-                () => txtNegativePrompt.Text,
-                dgvVibe,
+                () => PromptText,
+                () => NegativePromptText,
+                BuildVibeSelections,
                 CaptureImg2ImgOptions);
             generationController = new GenerationController(generationDataProvider);
             AttachGenerationControllerEvents();
-            InitializeAnlasDisplay();
 
-            var directorProcessor = new DirectorToolProcessor();
-            directorToolController = new DirectorToolController(directorProcessor, picProps, settingProps);
+            directorToolController = new DirectorToolController(new DirectorToolProcessor(), picProps, settingProps);
             AttachDirectorToolEvents();
-            InitializeAutoComplete();
+        }
+
+        private void InitializeComponent() {
+            SuspendLayout();
+            Name = "Form1";
+            Text = Properties.Resources.AppTitle;
+            ResumeLayout(false);
         }
 
         private void SyncWindowTitleVersion() {
@@ -78,439 +129,454 @@ namespace AutoNai3Tools {
                 displayVersion = version.ToString();
             }
 
-            string baseTitle = dreamForm1?.Text;
-            if (string.IsNullOrWhiteSpace(baseTitle))
-                baseTitle = Properties.Resources.AppTitle;
-
-            string fullTitle = $"{baseTitle} v{displayVersion}";
-            if (dreamForm1 != null)
-                dreamForm1.Text = fullTitle;
-
-            Text = fullTitle;
+            string baseTitle = Properties.Resources.AppTitle;
+            Text = string.IsNullOrWhiteSpace(baseTitle) ? $"v{displayVersion}" : $"{baseTitle} v{displayVersion}";
         }
 
-        private void InitializeAutoComplete() {
-            try {
-                string dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tag_dictionary.sqlite");
-                tagDatabase = new TagDatabase(dbPath);
+        protected override async void OnLoad(EventArgs e) {
+            base.OnLoad(e);
+            await InitializeWebViewAsync();
+        }
 
-                autoCompleteHelper = new AutoCompleteHelper(txtPrompt, tagDatabase, () => {
-                    var list = new System.Collections.Generic.List<string>();
-                    if (dgvTagSnippet != null) {
-                        foreach (DataGridViewRow row in dgvTagSnippet.Rows) {
-                            if (row.Cells[0].Value != null) {
-                                string name = row.Cells[0].Value.ToString();
-                                if (name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
-                                    name = name.Substring(0, name.Length - 4);
-                                list.Add("<" + name + ">");
-                            }
-                        }
+        private async Task InitializeWebViewAsync() {
+            try {
+                string root = AppPaths.WebUiRoot;
+                if (!Directory.Exists(root)) {
+                    throw new DirectoryNotFoundException(
+                        $"未找到前端资源目录：{root}\n请确认 webui 文件夹已随程序一起复制。");
+                }
+
+                Directory.CreateDirectory(AppPaths.PreviewRoot);
+                CleanupPreviewFolder();
+
+                Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER", AppPaths.WebViewUserDataRoot);
+
+                webView = new WebView2 {
+                    Dock = DockStyle.Fill,
+                    DefaultBackgroundColor = BackColor
+                };
+                Controls.Add(webView);
+
+                // 设置 AUTONAI_WEBVIEW_DEBUG_PORT 后可以用 Edge/Chrome 的 DevTools 连接界面调试。
+                var environmentOptions = new CoreWebView2EnvironmentOptions();
+                string debugPort = Environment.GetEnvironmentVariable("AUTONAI_WEBVIEW_DEBUG_PORT");
+                if (!string.IsNullOrWhiteSpace(debugPort))
+                    environmentOptions.AdditionalBrowserArguments = "--remote-debugging-port=" + debugPort;
+
+                var environment = await CoreWebView2Environment
+                    .CreateAsync(null, AppPaths.WebViewUserDataRoot, environmentOptions)
+                    .ConfigureAwait(true);
+                await webView.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
+
+                var core = webView.CoreWebView2;
+                core.Settings.IsStatusBarEnabled = false;
+                core.Settings.AreDevToolsEnabled = false;
+                core.Settings.AreDefaultContextMenusEnabled = true;
+                core.Settings.IsZoomControlEnabled = false;
+                core.Settings.IsSwipeNavigationEnabled = false;
+                core.Settings.AreBrowserAcceleratorKeysEnabled = false;
+
+                core.SetVirtualHostNameToFolderMapping("app.local", root,
+                    CoreWebView2HostResourceAccessKind.DenyCors);
+                core.SetVirtualHostNameToFolderMapping("preview.local", AppPaths.PreviewRoot,
+                    CoreWebView2HostResourceAccessKind.Allow);
+
+                core.WebMessageReceived += HandleWebMessageReceived;
+                core.NewWindowRequested += (sender, args) => {
+                    args.Handled = true;
+                    OpenExternal(args.Uri);
+                };
+                core.NavigationCompleted += (sender, args) => {
+                    if (!args.IsSuccess) {
+                        Logger.Error($"前端加载失败：{args.WebErrorStatus}");
                     }
-                    return list;
-                });
-            } catch (Exception ex) {
-                Logger.Warn($"Failed to init AutoComplete: {ex.Message}");
-            }
-        }
+                };
+                core.ProcessFailed += (sender, args) => {
+                    Logger.Error($"前端进程异常退出：{args.ProcessFailedKind}");
+                };
 
-        private void EnableDoubleBuffer(Control control) {
-            if (control == null)
-                return;
-
-            var doubleBufferProperty = typeof(Control).GetProperty("DoubleBuffered",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            doubleBufferProperty?.SetValue(control, true, null);
-
-            foreach (Control child in control.Controls) {
-                EnableDoubleBuffer(child);
-            }
-        }
-
-        private void ApplyLocalization() {
-            var resources = new ComponentResourceManager(typeof(Form1));
-            ApplyResourcesRecursive(resources, this);
-            ApplyLocalizationToDataGridViewColumns(resources);
-        }
-
-        private static void ApplyResourcesRecursive(ComponentResourceManager resources, Control control) {
-            resources.ApplyResources(control, control.Name);
-            foreach (Control child in control.Controls) {
-                ApplyResourcesRecursive(resources, child);
-            }
-        }
-
-        private void ApplyLocalizationToDataGridViewColumns(ComponentResourceManager resources) {
-            ApplyHeaderText(resources, dataGridViewTextBoxColumn1, "dataGridViewTextBoxColumn1");
-            ApplyHeaderText(resources, dataGridViewTextBoxColumn2, "dataGridViewTextBoxColumn2");
-            ApplyHeaderText(resources, Column1, "Column1");
-            ApplyHeaderText(resources, Column2, "Column2");
-            ApplyHeaderText(resources, Column3, "Column3");
-        }
-
-        private static void ApplyHeaderText(ComponentResourceManager resources, DataGridViewColumn column, string name) {
-            if (column == null)
-                return;
-
-            var headerText = resources.GetString($"{name}.HeaderText");
-            if (!string.IsNullOrWhiteSpace(headerText)) {
-                column.HeaderText = headerText;
-            }
-        }
-
-        private void HandleSettingsPropertyValueChanged(object sender, PropertyValueChangedEventArgs e) {
-            if (e?.ChangedItem?.PropertyDescriptor?.Name == nameof(SettingProperty.AnlasTracking)) {
-                OnAnlasTrackingChanged();
-                return;
-            }
-
-            if (e?.ChangedItem?.PropertyDescriptor?.Name != nameof(SettingProperty.UiLanguage))
-                return;
-
-            var result = MessageBox.Show(Properties.Resources.Msg_LanguageRestartPrompt,
-                Properties.Resources.Title_Prompt, MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            if (result != DialogResult.Yes)
-                return;
-
-            try {
-                configService.SaveSystemConfig(CaptureSystemConfig());
+                core.Navigate("https://app.local/index.html");
             }
             catch (Exception ex) {
-                Logger.Warn("保存系统配置失败",
-                    context: Logger.Context(("config", "system"), ("reason", ex.Message)));
+                Logger.Error("初始化 WebView2 失败", exception: ex);
+                MessageBox.Show(
+                    "初始化界面失败，请确认已安装 WebView2 运行时（Microsoft Edge WebView2 Runtime）。\n\n" +
+                    ex.Message,
+                    Properties.Resources.Title_Error, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
 
-            Application.Restart();
-            Environment.Exit(0);
+        private void CleanupPreviewFolder() {
+            try {
+                var limit = DateTime.UtcNow.AddDays(-1);
+                foreach (var file in Directory.GetFiles(AppPaths.PreviewRoot, "*.png")) {
+                    if (File.GetLastWriteTimeUtc(file) < limit)
+                        File.Delete(file);
+                }
+            }
+            catch {
+                // 预览缓存清理失败不影响主流程
+            }
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e) {
             base.OnFormClosed(e);
-            autoCompleteHelper?.Dispose();
+            SaveConfigs();
             tagDatabase?.Dispose();
         }
 
-        #region 固定画师，随机画师，随机提示词快速插入
+        internal void OpenExternal(string url) {
+            if (string.IsNullOrWhiteSpace(url))
+                return;
 
-        private void InitGrpEventArgs() {
-            grpArtistFixed.MouseHover += EventGRBMouseHover;
-            grpArtistFixed.MouseLeave += EventGRBMouseLeave;
-            grpArtistFixed.MouseClick += EventGRBMouseClick;
-            grpArtistRandom.MouseHover += EventGRBMouseHover;
-            grpArtistRandom.MouseLeave += EventGRBMouseLeave;
-            grpArtistRandom.MouseClick += EventGRBMouseClick;
+            if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            try {
+                System.Diagnostics.Process.Start(url);
+            }
+            catch (Exception ex) {
+                Logger.Warn("无法打开链接",
+                    context: Logger.Context(("url", url), ("reason", ex.Message)));
+            }
         }
 
-        private void EventGRBMouseHover(object sender, EventArgs e) {
-            GroupBox groupBox = sender as GroupBox;
-            if (groupBox == grpArtistFixed) {
-                groupBox.Text = Properties.Resources.Hover_InsertRemoveFixedArtist;
-                return;
-            }
-            else if (groupBox == grpArtistRandom) {
-                groupBox.Text = Properties.Resources.Hover_InsertRemoveRandomArtist;
-                return;
-            }
-
-        }
-
-        private void EventGRBMouseLeave(object sender, EventArgs e) {
-            GroupBox groupBox = sender as GroupBox;
-            if (groupBox == grpArtistFixed) {
-                groupBox.Text = Properties.Resources.GroupBox_FixedArtist;
-                return;
-            }
-            else if (groupBox == grpArtistRandom) {
-                groupBox.Text = Properties.Resources.GroupBox_RandomArtist;
-                return;
-            }
-
-        }
-
-        private void EventGRBMouseClick(object sender, EventArgs e) {
-            string insertPrompt = null;
-            GroupBox groupBox = sender as GroupBox;
-            if (groupBox == grpArtistFixed) {
-                insertPrompt = "<固定画师>";
-            }
-            else if (groupBox == grpArtistRandom) {
-                insertPrompt = "<随机画师>";
-            }
-
-            if (insertPrompt != null)
-                Tools.InsertTextToTextBox(txtPrompt, insertPrompt);
-        }
+        #region 生成流程事件
 
         private void AttachGenerationControllerEvents() {
+            generationController.Started += HandleGenerationStarted;
+            generationController.Stopped += HandleGenerationStopped;
             generationController.IterationStarted += HandleGenerationIterationStarted;
             generationController.ImageReady += HandleGenerationImageReady;
-            generationController.DelayPlanned += HandleGenerationDelayPlanned;
             generationController.Completed += HandleGenerationCompleted;
             generationController.Cancelled += HandleGenerationCancelled;
             generationController.Failed += HandleGenerationFailed;
-            generationController.Started += HandleGenerationStarted;
-            generationController.Stopped += HandleGenerationStopped;
         }
 
         private void AttachDirectorToolEvents() {
-            directorToolController.BusyStateChanged += HandleDirectorToolBusyStateChanged;
-            directorToolController.PreviewUpdated += HandleDirectorToolPreviewUpdated;
-            directorToolController.OutputUpdated += HandleDirectorToolOutputUpdated;
-            directorToolController.Completed += HandleDirectorToolCompleted;
-            directorToolController.Failed += HandleDirectorToolFailed;
+            directorToolController.BusyStateChanged += busy => Post("director-busy", new JObject { ["busy"] = busy });
+            directorToolController.PreviewUpdated += image => {
+                string url = SavePreviewImage(image, "director-in");
+                if (url != null)
+                    Post("director-preview", new JObject { ["url"] = url });
+            };
+            directorToolController.OutputUpdated += image => {
+                string url = SavePreviewImage(image, "director-out");
+                if (url != null)
+                    Post("director-output", new JObject { ["url"] = url });
+            };
+            directorToolController.Completed += () => Post("director-done", new JObject { ["ok"] = true });
+            directorToolController.Failed += ex => {
+                if (ex is OperationCanceledException)
+                    return;
+                Post("director-done", new JObject { ["ok"] = false, ["message"] = ex?.Message });
+            };
         }
 
         private void HandleGenerationStarted() {
-            if (InvokeRequired) {
-                BeginInvoke(new Action(HandleGenerationStarted));
-                return;
-            }
-
-            SetGenerateButtonRunning(true);
-            btnGenerate.Enabled = true;
-        }
-
-        private void HandleGenerationStopped() {
-            if (InvokeRequired) {
-                BeginInvoke(new Action(HandleGenerationStopped));
-                return;
-            }
-
-            ResetGenerationState();
-        }
-
-        private void HandleDirectorToolBusyStateChanged(bool isBusy) {
-            if (InvokeRequired) {
-                BeginInvoke(new Action<bool>(HandleDirectorToolBusyStateChanged), isBusy);
-                return;
-            }
-
-            btnDirectorToolsRemoveBGRun.Text = isBusy
-                ? Properties.Resources.Button_Running
-                : Properties.Resources.Button_Run;
-            btnDirectorToolsRemoveBGRun.Enabled = !isBusy;
-        }
-
-        private void HandleDirectorToolPreviewUpdated(Image preview) {
-            if (InvokeRequired) {
-                BeginInvoke(new Action<Image>(HandleDirectorToolPreviewUpdated), preview);
-                return;
-            }
-
-            ReplacePictureBoxImage(picDirectorToolsInput, preview);
-        }
-
-        private void HandleDirectorToolOutputUpdated(Image image) {
-            if (InvokeRequired) {
-                BeginInvoke(new Action<Image>(HandleDirectorToolOutputUpdated), image);
-                return;
-            }
-
-            ReplacePictureBoxImage(picDirectorToolsOutput, image);
-        }
-
-        private void HandleDirectorToolCompleted() {
-            if (InvokeRequired) {
-                BeginInvoke(new Action(HandleDirectorToolCompleted));
-                return;
-            }
-
-            Logger.Info("导演工具任务完成");
-        }
-
-        private void HandleDirectorToolFailed(Exception exception) {
-            if (InvokeRequired) {
-                BeginInvoke(new Action<Exception>(HandleDirectorToolFailed), exception);
-                return;
-            }
-
-            if (exception == null)
-                return;
-
-            if (exception is OperationCanceledException)
-                return;
-
-            MessageBox.Show(Properties.Resources.Msg_DirectorToolFailed, Properties.Resources.Title_Error,
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-
-        private void ResetGenerationState() {
-            SetGenerateButtonRunning(false);
-            btnGenerate.Enabled = true;
-        }
-
-        private void btnGenerate_Click(object sender, EventArgs e) {
-            if (generationController.IsGenerating) {
-                RequestStopGeneration();
-                return;
-            }
-
-            try {
-                generationController.StartGeneration();
-            }
-            catch (Exception ex) {
-                Logger.Error("构建生成参数失败", exception: ex,
-                    context: Logger.Context(("action", "StartGeneration")));
-                MessageBox.Show(Properties.Resources.Msg_InvalidGenerationParams, Properties.Resources.Title_Error,
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void picView_Click(object sender, EventArgs e) {
-            try {
-                System.Diagnostics.Process.Start(picProps.OutputPath);
-            }
-            catch (Exception ex) {
-                Logger.Warn("无法打开输出目录",
-                    context: Logger.Context(("path", picProps.OutputPath), ("reason", ex.Message)));
-            }
-        }
-
-        private void RequestStopGeneration() {
-            btnGenerate.Enabled = false;
-            RefreshAnlasButtonText();
-            generationController.RequestStopGeneration();
+            isGenerating = true;
+            Post("started", new JObject());
+            PushAnlasEstimate();
         }
 
         private void HandleGenerationIterationStarted(int iteration) {
-            if (InvokeRequired) {
-                BeginInvoke(new Action<int>(HandleGenerationIterationStarted), iteration);
-                return;
-            }
-
-            propertyGrid1.Refresh();
+            PushPicProps();
+            Post("iteration", new JObject { ["index"] = iteration, ["total"] = Math.Max(1, picProps.RunNum) });
+            PushAnlasEstimate();
         }
 
         private void HandleGenerationImageReady(int iteration, Bitmap bitmap) {
             if (bitmap == null)
                 return;
 
-            if (InvokeRequired) {
-                BeginInvoke(new Action<int, Bitmap>(HandleGenerationImageReady), iteration, bitmap);
-                return;
-            }
-
             if (settingProps.ClosePicPreview) {
                 bitmap.Dispose();
                 return;
             }
 
-            if (picView.Image != null) {
-                picView.Image.Dispose();
-                picView.Image = null;
-            }
-
-            picView.Image = bitmap;
-        }
-
-        private void HandleGenerationDelayPlanned(int iteration, DelayInfo delayInfo, string prompt) {
-            // 保留扩展接口，当前无需额外 UI 行为
-        }
-
-        private void HandleGenerationCompleted() {
-            if (InvokeRequired) {
-                BeginInvoke(new Action(HandleGenerationCompleted));
+            string url = SavePreviewImage(bitmap, "gen");
+            bitmap.Dispose();
+            if (url == null)
                 return;
-            }
 
-            ResetGenerationState();
+            Post("image-ready", new JObject {
+                ["url"] = url,
+                ["index"] = iteration,
+                ["seed"] = picProps.Seeds,
+                ["width"] = picProps.Width,
+                ["height"] = picProps.Height,
+                ["steps"] = picProps.Steps
+            });
+            PushAnlasEstimate();
+        }
+
+        private void HandleGenerationStopped() {
+            isGenerating = false;
+            Post("idle", new JObject());
+        }
+        private void HandleGenerationCompleted() {
+            isGenerating = false;
+            Post("finished", new JObject());
+            PushAnlasEstimate();
         }
 
         private void HandleGenerationCancelled() {
-            if (InvokeRequired) {
-                BeginInvoke(new Action(HandleGenerationCancelled));
-                return;
-            }
-
-            ResetGenerationState();
+            isGenerating = false;
+            Post("stopped", new JObject());
+            PushAnlasEstimate();
         }
 
         private void HandleGenerationFailed(Exception ex) {
-            if (InvokeRequired) {
-                BeginInvoke(new Action<Exception>(HandleGenerationFailed), ex);
+            isGenerating = false;
+            Logger.Error("生成任务发生未处理异常", exception: ex,
+                context: Logger.Context(("stage", "pipeline")));
+            Post("failed", new JObject { ["message"] = ex?.Message ?? "未知错误" });
+            PushAnlasEstimate();
+        }
+
+        #endregion
+
+        #region 前端通信
+
+        internal void Post(string type, JObject data) {
+            PostRaw(new JObject {
+                ["type"] = type,
+                ["data"] = data ?? new JObject()
+            });
+        }
+
+        internal void PostRaw(JObject message) {
+            if (message == null)
+                return;
+
+            // 生成流程运行在后台线程，而 CoreWebView2 只允许在 UI 线程访问，
+            // 所以必须先把消息切回 UI 线程，再决定是直发还是缓冲。
+            if (!IsDisposed && !Disposing && IsHandleCreated && InvokeRequired) {
+                try {
+                    BeginInvoke(new Action<JObject>(PostRaw), message);
+                }
+                catch (Exception) {
+                    // 窗口正在关闭，直接丢弃
+                }
                 return;
             }
 
-            Logger.Error("生成任务发生未处理异常", exception: ex,
-                context: Logger.Context(("stage", "pipeline")));
-            ResetGenerationState();
+            if (webUiReady && webView?.CoreWebView2 != null) {
+                try {
+                    webView.CoreWebView2.PostWebMessageAsJson(message.ToString(Newtonsoft.Json.Formatting.None));
+                    return;
+                }
+                catch (Exception) {
+                    // 前端正在重载，退回缓冲
+                }
+            }
+
+            string kind = message["type"]?.ToString();
+            if (kind == "log" || kind == "pic-info" || kind == "state") {
+                lock (logLock) {
+                    bufferedLogs.Add(message);
+                    if (bufferedLogs.Count > MaxBufferedLogLines)
+                        bufferedLogs.RemoveRange(0, bufferedLogs.Count - MaxBufferedLogLines);
+                }
+            }
+        }
+
+        internal void MarkWebUiReady() {
+            webUiReady = true;
+
+            List<JObject> pending;
+            lock (logLock) {
+                pending = bufferedLogs.ToList();
+                bufferedLogs.Clear();
+            }
+
+            foreach (var message in pending) {
+                if (message["type"]?.ToString() == "state")
+                    continue;
+                PostRaw(message);
+            }
+        }
+
+        internal void RecordPicInfo(string message) {
+            lastPicInfo = message ?? string.Empty;
+            Post("pic-info", new JObject { ["text"] = lastPicInfo });
+        }
+
+        internal void RecordLog(LogEntry entry) {
+            var text = new System.Text.StringBuilder(entry.Message ?? string.Empty);
+            if (entry.Context != null && entry.Context.Count > 0)
+                text.Append(" | ").Append(string.Join(", ", entry.Context.Select(kv => kv.Key + "=" + kv.Value)));
+            if (entry.Exception != null)
+                text.Append(" | ").Append(entry.Exception);
+
+            Post("log", new JObject {
+                ["time"] = entry.Timestamp.ToString("HH:mm:ss"),
+                ["level"] = entry.Level.ToString().ToLowerInvariant(),
+                ["category"] = entry.Category ?? string.Empty,
+                ["text"] = text.ToString()
+            });
+        }
+
+        /// <summary>把 C# 端主动修改的文本回推给前端（例如导入 PNG 源数据后）。</summary>
+        internal void PushTextValues(params string[] fields) {
+            var data = new JObject();
+            foreach (var field in fields) {
+                switch (field) {
+                    case "prompt":
+                        data["prompt"] = PromptText;
+                        break;
+                    case "negativePrompt":
+                        data["negativePrompt"] = NegativePromptText;
+                        break;
+                    case "artistFixed":
+                        data["artistFixed"] = ArtistFixedText;
+                        break;
+                    case "artistRandom":
+                        data["artistRandom"] = ArtistRandomText;
+                        break;
+                }
+            }
+
+            Post("text", data);
         }
 
         #endregion
 
-        #region 详情页
+        #region 图片预览缓存
 
-        private void btnGetMorePrompt_Click(object sender, EventArgs e) {
-            System.Diagnostics.Process.Start("https://pan.baidu.com/s/1CTFTVIo7vKzDRy62LNxMMw?pwd=ktur");
-        }
+        internal string SavePreviewImage(Image image, string prefix) {
+            if (image == null)
+                return null;
 
-        private void btnGetRollDoc_Click(object sender, EventArgs e) {
-            System.Diagnostics.Process.Start("https://docs.qq.com/sheet/DRFdBdGxZaXdkc3pP?tab=7mb6q1");
-        }
-
-        private void btnParsePrompt_Click(object sender, EventArgs e) {
-            System.Diagnostics.Process.Start("https://spell.novelai.dev/");
-        }
-
-        private void btnPushBackPic_Click(object sender, EventArgs e) {
-            System.Diagnostics.Process.Start("https://huggingface.co/spaces/SmilingWolf/wd-tagger");
-        }
-
-        private void btnTutorial_Click(object sender, EventArgs e) {
-            System.Diagnostics.Process.Start("https://cyanautumn.github.io/NovalAi3AutoMaticDoc/");
-        }
-
-        private void btnDocToolsBook_Click(object sender, EventArgs e) {
-            System.Diagnostics.Process.Start("https://docs.qq.com/doc/p/230e7ada2a60d8e347d639edd5521f5e62332fe9");
-        }
-
-        private void btnDocGithub_Click(object sender, EventArgs e) {
-            System.Diagnostics.Process.Start("https://docs.qq.com/doc/p/230e7ada2a60d8e347d639edd5521f5e62332fe9");
+            try {
+                Directory.CreateDirectory(AppPaths.PreviewRoot);
+                string name = $"{prefix}_{DateTime.Now:HHmmss}_{Guid.NewGuid().ToString("N").Substring(0, 8)}.png";
+                string path = Path.Combine(AppPaths.PreviewRoot, name);
+                image.Save(path, ImageFormat.Png);
+                return "https://preview.local/" + name;
+            }
+            catch (Exception ex) {
+                Logger.Warn("保存预览图片失败",
+                    context: Logger.Context(("reason", ex.Message)));
+                return null;
+            }
         }
 
         #endregion
 
-        private int resizeAreaSize = 10;
-        private const int WM_NCHITTEST = 0x84;
-        private const int HTCLIENT = 1;
-        private const int HTLEFT = 10;
-        private const int HTRIGHT = 11;
-        private const int HTTOP = 12;
-        private const int HTTOPLEFT = 13;
-        private const int HTTOPRIGHT = 14;
-        private const int HTBOTTOM = 15;
-        private const int HTBOTTOMLEFT = 16;
-        private const int HTBOTTOMRIGHT = 17;
+        #region 日志接收器
+
+        private sealed class WebUiLogSink : ILogSink, ILogSpacerSink, IPicInfoSink {
+            private readonly Form1 form;
+
+            public WebUiLogSink(Form1 form) {
+                this.form = form ?? throw new ArgumentNullException(nameof(form));
+            }
+
+            public LogSinkCapabilities Capabilities => LogSinkCapabilities.Ui;
+
+            public bool IsEnabled(LogLevel level) => !form.IsDisposed;
+
+            public void Write(LogEntry entry) {
+                if (form.IsDisposed || form.Disposing)
+                    return;
+
+                if (form.InvokeRequired) {
+                    try {
+                        form.BeginInvoke(new Action<LogEntry>(Write), entry);
+                    }
+                    catch (InvalidOperationException) {
+                        // 窗口正在关闭
+                    }
+                    return;
+                }
+
+                form.RecordLog(entry);
+            }
+
+            public void InsertSpacer() { }
+
+            public void UpdatePicInfo(string message) {
+                if (form.IsDisposed || form.Disposing)
+                    return;
+
+                if (form.InvokeRequired) {
+                    try {
+                        form.BeginInvoke(new Action<string>(UpdatePicInfo), message);
+                    }
+                    catch (InvalidOperationException) {
+                    }
+                    return;
+                }
+
+                form.RecordPicInfo(message);
+            }
+        }
+
+        #endregion
+
+        #region 窗口边框（无边框窗口的拖动与缩放）
+
+        internal void BeginWindowDrag() {
+            try {
+                ReleaseCapture();
+                SendMessage(Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
+            }
+            catch {
+                // 拖动失败时忽略
+            }
+        }
+
+        internal void ToggleMaximize() {
+            if (WindowState == FormWindowState.Maximized) {
+                WindowState = FormWindowState.Normal;
+                return;
+            }
+
+            MaximizedBounds = Screen.FromControl(this).WorkingArea;
+            WindowState = FormWindowState.Maximized;
+        }
+
+        internal void MinimizeWindow() {
+            WindowState = FormWindowState.Minimized;
+        }
 
         protected override void WndProc(ref Message m) {
             base.WndProc(ref m);
 
-            if (m.Msg == WM_NCHITTEST) {
-                // 获取鼠标相对于窗体的位置
-                int x = (m.LParam.ToInt32() & 0xFFFF);
-                int y = (m.LParam.ToInt32() >> 16) & 0xFFFF;
-                var clientPos = this.PointToClient(new System.Drawing.Point(x, y));
+            if (m.Msg != WM_NCHITTEST || WindowState == FormWindowState.Maximized)
+                return;
 
-                // 判断在哪个边缘
-                if (clientPos.X <= resizeAreaSize && clientPos.Y <= resizeAreaSize)
-                    m.Result = (IntPtr)HTTOPLEFT;
-                else if (clientPos.X >= this.ClientSize.Width - resizeAreaSize && clientPos.Y <= resizeAreaSize)
-                    m.Result = (IntPtr)HTTOPRIGHT;
-                else if (clientPos.X <= resizeAreaSize && clientPos.Y >= this.ClientSize.Height - resizeAreaSize)
-                    m.Result = (IntPtr)HTBOTTOMLEFT;
-                else if (clientPos.X >= this.ClientSize.Width - resizeAreaSize &&
-                         clientPos.Y >= this.ClientSize.Height - resizeAreaSize)
-                    m.Result = (IntPtr)HTBOTTOMRIGHT;
-                else if (clientPos.Y <= resizeAreaSize)
-                    m.Result = (IntPtr)HTTOP;
-                else if (clientPos.Y >= this.ClientSize.Height - resizeAreaSize)
-                    m.Result = (IntPtr)HTBOTTOM;
-                else if (clientPos.X <= resizeAreaSize)
-                    m.Result = (IntPtr)HTLEFT;
-                else if (clientPos.X >= this.ClientSize.Width - resizeAreaSize)
-                    m.Result = (IntPtr)HTRIGHT;
-                else
-                    m.Result = (IntPtr)HTCLIENT; // 其他区域
-            }
+            int x = m.LParam.ToInt32() & 0xFFFF;
+            int y = (m.LParam.ToInt32() >> 16) & 0xFFFF;
+            var clientPos = PointToClient(new Point(x, y));
+
+            bool left = clientPos.X <= ResizeAreaSize;
+            bool right = clientPos.X >= ClientSize.Width - ResizeAreaSize;
+            bool top = clientPos.Y <= ResizeAreaSize;
+            bool bottom = clientPos.Y >= ClientSize.Height - ResizeAreaSize;
+
+            if (left && top)
+                m.Result = (IntPtr)HTTOPLEFT;
+            else if (right && top)
+                m.Result = (IntPtr)HTTOPRIGHT;
+            else if (left && bottom)
+                m.Result = (IntPtr)HTBOTTOMLEFT;
+            else if (right && bottom)
+                m.Result = (IntPtr)HTBOTTOMRIGHT;
+            else if (top)
+                m.Result = (IntPtr)HTTOP;
+            else if (bottom)
+                m.Result = (IntPtr)HTBOTTOM;
+            else if (left)
+                m.Result = (IntPtr)HTLEFT;
+            else if (right)
+                m.Result = (IntPtr)HTRIGHT;
+            else
+                m.Result = (IntPtr)HTCLIENT;
         }
+
+        #endregion
     }
 }

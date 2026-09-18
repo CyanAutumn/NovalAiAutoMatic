@@ -25,6 +25,7 @@
 - [配置与文件位置](#配置与文件位置)
 - [自动更新](#自动更新)
 - [常见问题](#常见问题)
+- [界面架构（WebView2）](#界面架构webview2)
 - [开发与构建](#开发与构建)
 - [相关链接](#相关链接)
 - [许可](#许可)
@@ -85,6 +86,7 @@ artistC
 ## 运行环境
 - Windows 10/11
 - .NET Framework 4.8
+- WebView2 Runtime（Win10 1803+ / Win11 通常已内置，缺失时从 <https://developer.microsoft.com/microsoft-edge/webview2/> 安装）
 - NovelAI 账号 Token（可选配置代理）
 
 ## 下载与安装
@@ -268,7 +270,11 @@ f(steps) = steps × 4/7 + 3.2
 | 随机提示词目录 | `.\prompt\prompt_by_风吟` | 存放 `*.txt` Prompt |
 | 预设配置 | `C:\Users\Public\Documents\auto_nai3_2\*.toml` | 预设保存位置 |
 | 系统配置 | `C:\Users\Public\Documents\auto_nai3_system\config.toml` | Token、休眠时间等 |
+| Anlas 消耗缓存 | `C:\Users\Public\Documents\auto_nai3_system\anlas_cost_cache.toml` | 按参数组合缓存消耗，有效期 8 小时 |
 | 运行日志 | `logs/mylog.txt` | log4net 输出 |
+| 界面主题 | `%LOCALAPPDATA%\AutoNai3Tools\ui.json` | 主题与界面偏好 |
+| WebView2 数据 | `%LOCALAPPDATA%\AutoNai3Tools\WebView2\` | 浏览器用户数据目录 |
+| 预览图缓存 | `%LOCALAPPDATA%\AutoNai3Tools\WebView2\preview\` | 生成预览，自动清理 1 天前的文件 |
 
 ## 自动更新
 非调试模式启动时会自动检查更新，更新源为 GitHub Releases。
@@ -286,10 +292,60 @@ f(steps) = steps × 4/7 + 3.2
 4. 无法保存配置  
    确认 `C:\Users\Public\Documents\` 目录有写入权限。
 
+5. 界面空白 / 提示缺少 WebView2  
+   安装 WebView2 Runtime 后重启程序；若界面停留在旧版本样式，
+   删除 `%LOCALAPPDATA%\AutoNai3Tools\WebView2\` 再试。
+
+## 界面架构（WebView2）
+整个窗体是一个无边框 WinForms 外壳，界面部分已经全部换成 `webui/` 下的
+HTML/CSS/JS，由 WebView2 加载。**没有使用任何 WinForms 控件**，也不再需要
+`Form1.Designer.cs`。
+
+### 文件构成
+| 文件 | 作用 |
+| --- | --- |
+| `webui/index.html` | 页面结构（标题栏、左侧导航、各功能页） |
+| `webui/app.css` | 样式与亮/暗双主题（CSS 变量） |
+| `webui/app.js` | 全部交互逻辑与宿主通信 |
+| `Form1.cs` | 窗口外壳、WebView2 宿主、生成流程事件 |
+| `Form1.Bridge.cs` | 前端指令分发 + 文件选择对话框 |
+| `Form1.Ui.cs` | 属性描述符生成、状态序列化、主题读写 |
+
+### 通信协议
+前端通过 `chrome.webview.postMessage` 发送 `{ cmd, data }`，C# 侧由
+`Form1.Bridge.cs` 的 `DispatchWebCommand` 分发；C# 通过
+`PostWebMessageAsJson` 回推 `{ type, data }` 事件。
+
+- **指令**（前端 → C#）：`ready`、`state:get`、`window:*`、`theme:set`、
+  `text:set`、`artist:set`、`param:set`、`setting:set`、`generate`、`stop`、
+  `anlas:query`、`config:*`、`wildcard:*`、`vibe:*`、`img2img:*`、
+  `director:*`、`metadata:import`、`tag:suggest`、`path:pickFolder`、
+  `folder:open`、`log:clear`
+- **事件**（C# → 前端）：`state`、`log`、`pic-info`、`pic`、`settings`、
+  `anlas`、`started`、`iteration`、`image-ready`、`finished`、`stopped`、
+  `idle`、`failed`、`toast` 等
+
+`PostRaw` 会在后台线程自动切回 UI 线程（`CoreWebView2` 只能从 UI 线程访问），
+前端尚未 ready 时日志/状态会先缓冲，最多 500 条。
+
+### 前端调试
+设置环境变量 `AUTONAI_WEBVIEW_DEBUG_PORT`（例如 `9222`）后再启动程序，
+WebView2 会开放 CDP 端口，可直接用 Chrome DevTools 或脚本连接调试：
+
+```powershell
+$env:AUTONAI_WEBVIEW_DEBUG_PORT = '9222'
+.\bin\Debug\AutoNai3Tools.exe
+```
+
+在浏览器里打开 `http://127.0.0.1:9222` 即可看到可调试页面。
+
 ## 开发与构建
-- 依赖：Visual Studio 2022 + .NET Framework 4.8
+- 依赖：Visual Studio 2022+ + .NET Framework 4.8 + WebView2 Runtime
 - 打开 `AutoNai3Tools.sln`，还原 NuGet 包并选择 `Release` 编译。
+- 只改 `webui/` 下的前端文件时需要重新生成，文件会以
+  `PreserveNewest` 复制到 `bin\<配置>\webui\`。
 - 项目结构：
+  - `webui/` 前端界面（HTML/CSS/JS）
   - `controllers/` 生成流程与导演工具控制器
   - `services/` 配置与 Wildcard 服务
   - `utils/` 请求封装、日志、Prompt 解析、Vibe 处理

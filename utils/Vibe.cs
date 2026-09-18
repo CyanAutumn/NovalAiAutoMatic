@@ -8,7 +8,6 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using System.Windows.Forms;
 
 namespace AutoNai3Tools.utils {
     internal class Vibe {
@@ -181,102 +180,82 @@ namespace AutoNai3Tools.utils {
             return ParseOtherVibe(model, vibe_list);
         }
 
-        public static void SetVibeInterfaceStatus(string vibe_path, Form1 form) {
-            if (vibe_path.EndsWith(".naiv4vibe")) {
-                try {
-                    string jsonContent = File.ReadAllText(vibe_path);
-                    JObject jsonObj = JObject.Parse(jsonContent);
-                    var options = GetInformationExtractedOptions(jsonObj, form.picProps.Model);
-                    form.cmbVibeIE.Items.Clear();
-                    if (options.Count > 0) {
-                        form.nudVibeIE.Visible = false;
-                        form.cmbVibeIE.Visible = true;
-                        foreach (var value in options)
-                            form.cmbVibeIE.Items.Add(value);
-
-                        form.cmbVibeIE.SelectedIndex = 0;
-                        form.nudVibeIE.Value = (decimal)options[0];
-                    }
-                    else {
-                        form.nudVibeIE.Visible = true;
-                        form.cmbVibeIE.Visible = false;
-                    }
-                }
-                catch (Exception ex) {
-                    Logger.Warn("读取 Vibe 文件失败",
-                        context: Logger.Context(("path", vibe_path), ("reason", ex.Message)));
-                    form.nudVibeIE.Visible = true;
-                    form.cmbVibeIE.Visible = false;
-                }
+        /// <summary>读取 .naiv4vibe 里可用的「信息抽取」档位；普通图片返回空列表。</summary>
+        public static List<float> GetVibeInformationExtractedOptions(string vibePath, BodyTools.Model model) {
+            var results = new List<float>();
+            if (string.IsNullOrWhiteSpace(vibePath)) {
+                return results;
             }
-            else {
-                form.nudVibeIE.Visible = true;
-                form.cmbVibeIE.Visible = false;
-            }
-        }
 
-        public static void ImportVibeBundle(string bundlePath, Form1 form) {
+            if (!vibePath.EndsWith(".naiv4vibe", StringComparison.OrdinalIgnoreCase)) {
+                results.Add(1.0f);
+                return results;
+            }
+
             try {
-                string jsonContent = File.ReadAllText(bundlePath);
-                JObject bundleObj = JObject.Parse(jsonContent);
-                if (bundleObj["vibes"] is JArray vibes) {
-                    string cacheDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "VibeCache");
-                    if (!Directory.Exists(cacheDir)) {
-                        Directory.CreateDirectory(cacheDir);
-                    }
-
-                    int count = 0;
-                    foreach (JObject vibe in vibes) {
-                        try {
-                            // Extract info
-                            float ie = 1.0f;
-                            var options = GetInformationExtractedOptions(vibe, form.picProps.Model);
-                            if (options.Count > 0)
-                                ie = options[0];
-
-                            float rs = vibe["importInfo"]?["strength"]?.Value<float>() ?? 0.6f;
-
-                            string vibeName = vibe["name"]?.ToString() ?? "unknown";
-                            string bundleName = Path.GetFileNameWithoutExtension(bundlePath);
-                            string displayName = $"{bundleName}-{vibeName}";
-
-                            // Generate unique filename
-                            // Use a hash of the content or Guid? content is safer for dedup but Guid is easier.
-                            // Use Guid for now.
-                            string fileName = $"bundle_{Path.GetFileNameWithoutExtension(bundlePath)}_{Guid.NewGuid().ToString().Substring(0, 8)}.naiv4vibe";
-                            string filePath = Path.Combine(cacheDir, fileName);
-
-                            File.WriteAllText(filePath, vibe.ToString());
-
-                            form.dgvVibe.Rows.Add("启用", displayName, (decimal)ie, (decimal)rs, filePath);
-                            count++;
-                        }
-                        catch (Exception ex) {
-                            Logger.Warn("导入 Bundle 中的单个 Vibe 失败",
-                                context: Logger.Context(("reason", ex.Message)));
-                        }
-                    }
-
-                    Logger.Info($"成功从 Bundle 导入 {count} 个 Vibe",
-                        context: Logger.Context(("path", bundlePath)));
-                    MessageBox.Show($"成功导入 {count} 个 Vibe", "导入完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
+                string jsonContent = File.ReadAllText(vibePath);
+                JObject jsonObj = JObject.Parse(jsonContent);
+                results = GetInformationExtractedOptions(jsonObj, model);
             }
             catch (Exception ex) {
-                Logger.Error("读取或解析 Vibe Bundle 失败", exception: ex,
-                    context: Logger.Context(("path", bundlePath)));
-                MessageBox.Show("导入失败: " + ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Logger.Warn("读取 Vibe 文件失败",
+                    context: Logger.Context(("path", vibePath), ("reason", ex.Message)));
             }
+
+            if (results.Count == 0)
+                results.Add(1.0f);
+
+            return results;
         }
 
-        public static string SelectAndMappingPicToPictureBox(Form1 form) {
-            string path = Tools.SelectVibeFile();
-            if (path != null) {
-                Tools.ShowImage(path, form.picVibeView);
-                SetVibeInterfaceStatus(path, form);
-                return path;
+        /// <summary>导入 .naiv4vibebundle，把里面的每个 Vibe 落到本地缓存目录并返回配置项。</summary>
+        public static List<VibeConfigData> ImportVibeBundle(string bundlePath, BodyTools.Model model) {
+            var imported = new List<VibeConfigData>();
+            if (string.IsNullOrWhiteSpace(bundlePath) || !File.Exists(bundlePath))
+                return imported;
+
+            string jsonContent = File.ReadAllText(bundlePath);
+            JObject bundleObj = JObject.Parse(jsonContent);
+            if (!(bundleObj["vibes"] is JArray vibes))
+                return imported;
+
+            string cacheDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "VibeCache");
+            if (!Directory.Exists(cacheDir))
+                Directory.CreateDirectory(cacheDir);
+
+            string bundleName = Path.GetFileNameWithoutExtension(bundlePath);
+            foreach (JObject vibe in vibes) {
+                try {
+                    float informationExtracted = 1.0f;
+                    var options = GetInformationExtractedOptions(vibe, model);
+                    if (options.Count > 0)
+                        informationExtracted = options[0];
+
+                    float referenceStrength = vibe["importInfo"]?["strength"]?.Value<float>() ?? 0.6f;
+                    string vibeName = vibe["name"]?.ToString() ?? "unknown";
+                    string fileName =
+                        $"bundle_{bundleName}_{Guid.NewGuid().ToString().Substring(0, 8)}.naiv4vibe";
+                    string filePath = Path.Combine(cacheDir, fileName);
+
+                    File.WriteAllText(filePath, vibe.ToString());
+
+                    imported.Add(new VibeConfigData {
+                        Enabled = true,
+                        Name = $"{bundleName}-{vibeName}",
+                        IE = informationExtracted,
+                        RS = referenceStrength,
+                        Path = filePath
+                    });
+                }
+                catch (Exception ex) {
+                    Logger.Warn("导入 Bundle 中的单个 Vibe 失败",
+                        context: Logger.Context(("reason", ex.Message)));
+                }
             }
-            return null;
+
+            Logger.Info($"成功从 Bundle 导入 {imported.Count} 个 Vibe",
+                context: Logger.Context(("path", bundlePath)));
+            return imported;
         }
     }
 }
