@@ -140,15 +140,15 @@ namespace AutoNai3Tools {
                     });
                     break;
                 case "vibe:add":
-                    AddVibe(data["path"]?.ToString(), data["ie"]?.Value<float>() ?? 1f,
-                        data["rs"]?.Value<float>() ?? 0.6f);
+                    AddVibe(data["path"]?.ToString(), ClampFloat(data["ie"], 0.01f, 1f, 1f),
+                        ClampFloat(data["rs"], 0.01f, 1f, 0.6f));
                     break;
                 case "vibe:bundle":
                     ImportVibeBundle(data["path"]?.ToString());
                     break;
                 case "vibe:update":
-                    UpdateVibe(data["index"]?.Value<int>() ?? -1, data["ie"]?.Value<float>() ?? 1f,
-                        data["rs"]?.Value<float>() ?? 0.6f, data["enabled"]?.Value<bool>() ?? true,
+                    UpdateVibe(data["index"]?.Value<int>() ?? -1, ClampFloat(data["ie"], 0.01f, 1f, 1f),
+                        ClampFloat(data["rs"], 0.01f, 1f, 0.6f), data["enabled"]?.Value<bool>() ?? true,
                         data["name"]?.ToString());
                     break;
                 case "vibe:delete":
@@ -165,8 +165,8 @@ namespace AutoNai3Tools {
                     ClearImg2Img();
                     break;
                 case "img2img:set":
-                    Img2ImgStrength = data["strength"]?.Value<float>() ?? Img2ImgStrength;
-                    Img2ImgNoise = data["noise"]?.Value<float>() ?? Img2ImgNoise;
+                    Img2ImgStrength = ClampFloat(data["strength"], 0.01f, 0.99f, Img2ImgStrength);
+                    Img2ImgNoise = ClampFloat(data["noise"], 0f, 0.99f, Img2ImgNoise);
                     PushImg2Img();
                     break;
 
@@ -265,10 +265,12 @@ namespace AutoNai3Tools {
                     ArtistModify = value?.Value<bool>() ?? ArtistModify;
                     break;
                 case "min":
-                    ArtistMin = ClampInt(value, 1, 99, ArtistMin);
+                    // 旧版 numArtistMin 的取值范围是 1~100
+                    ArtistMin = ClampInt(value, 1, 100, ArtistMin);
                     break;
                 case "max":
-                    ArtistMax = ClampInt(value, 1, 99, ArtistMax);
+                    // 旧版 numArtistMax 的取值范围是 1~100
+                    ArtistMax = ClampInt(value, 1, 100, ArtistMax);
                     break;
                 default:
                     return;
@@ -291,6 +293,13 @@ namespace AutoNai3Tools {
             return Math.Max(min, Math.Min(max, parsed));
         }
 
+        private static float ClampFloat(JToken value, float min, float max, float fallback) {
+            if (value == null || value.Type == JTokenType.Null)
+                return fallback;
+            float parsed = value.Value<float>();
+            return Math.Max(min, Math.Min(max, parsed));
+        }
+
         private void SetDirectorField(JObject data) {
             string field = data["field"]?.ToString();
             JToken value = data["value"];
@@ -302,7 +311,8 @@ namespace AutoNai3Tools {
                     DirectorFolderPath = value?.ToString();
                     break;
                 case "iterations":
-                    DirectorIterations = ClampInt(value, 1, 999, DirectorIterations);
+                    // 旧版 nudLineArtParseNum 的取值范围是 1~100
+                    DirectorIterations = ClampInt(value, 1, 100, DirectorIterations);
                     break;
                 case "colorizePrompt":
                     ColorizePrompt = value?.ToString() ?? string.Empty;

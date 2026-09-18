@@ -121,7 +121,7 @@
               <header><h2>运行</h2></header>
               <div class="content">
                 <div class="kv"><span class="k">跑图数量</span><div class="row"><input class="input" type="number" id="quickRunNum" min="1" style="width:90px" /></div></div>
-                <div class="kv"><span class="k">参数固定数量</span><div class="row"><input class="input" type="number" id="quickKeepParams" min="0" style="width:90px" /></div></div>
+                <div class="kv"><span class="k">参数固定数量</span><div class="row"><input class="input" type="number" id="quickKeepParams" min="1" style="width:90px" /></div></div>
                 <div class="note">提示词串里可以用 &lt;固定画师&gt;、&lt;随机画师&gt;、&lt;片段名&gt; 占位。</div>
               </div>
             </div>
@@ -143,7 +143,13 @@
       <section class="page" id="page-artist">
         <div class="grid wide">
           <div class="card">
-            <header><h2>画师</h2><div class="spacer"></div><span class="hint">在提示词里用 &lt;固定画师&gt; / &lt;随机画师&gt; 引用</span></header>
+            <header>
+              <h2>画师</h2>
+              <div class="spacer"></div>
+              <span class="hint">点击按钮插入 / 移除提示词里的占位符</span>
+              <button class="btn sm ghost" id="artistInsertFixed">插入 &lt;固定画师&gt;</button>
+              <button class="btn sm ghost" id="artistInsertRandom">插入 &lt;随机画师&gt;</button>
+            </header>
             <div class="content">
               <div class="two">
                 <label class="field"><span class="lbl">固定画师</span><textarea class="textarea" id="artistFixed" spellcheck="false" rows="6"></textarea></label>
@@ -154,7 +160,7 @@
               <div class="kv"><span class="k">全局减权 [] Max</span><div class="row"><input class="input" type="number" id="artistReduceMax" min="0" max="99" style="width:90px" /></div></div>
               <div class="kv"><span class="k">全局加权 :: Max</span><div class="row"><input class="input" type="number" step="0.1" id="artistIncreaseDcMax" min="0" max="99" style="width:90px" /></div></div>
               <div class="kv"><span class="k">全局减权 :: Max</span><div class="row"><input class="input" type="number" step="0.1" id="artistReduceDcMax" min="0" max="99" style="width:90px" /></div></div>
-              <div class="kv"><span class="k">随机抽取数量</span><div class="row"><input class="input" type="number" id="artistMin" min="1" style="width:74px" /><span class="note">~</span><input class="input" type="number" id="artistMax" min="1" style="width:74px" /><span class="note">位</span></div></div>
+              <div class="kv"><span class="k">随机抽取数量</span><div class="row"><input class="input" type="number" id="artistMin" min="1" max="100" style="width:74px" /><span class="note">~</span><input class="input" type="number" id="artistMax" min="1" max="100" style="width:74px" /><span class="note">位</span></div></div>
               <div class="kv"><span class="k">artist: 前缀</span><div class="row"><span class="switch"><input type="checkbox" id="artistModify" /><span class="track"></span></span><span class="note">为所有画师加上 artist: 前缀</span></div></div>
               <div class="note">官方规则：<code>{}</code> 加权约 1.05 倍、<code>[]</code> 减权约 1/1.05 倍，每个括号影响其右侧的全部内容；<code>n::内容::</code> 数字权重需要 V4 以上，负值需要 V4.5 以上。</div>
             </div>
@@ -166,7 +172,7 @@
         <div class="grid">
           <div class="col">
             <div class="card">
-              <header><h2>wildcard 片段</h2><div class="spacer"></div><span class="hint">点击一行可把 &lt;片段名&gt; 插入提示词</span></header>
+              <header><h2>wildcard 片段</h2><div class="spacer"></div><span class="hint">点击一行可插入 / 移除提示词里的 &lt;片段名&gt;</span></header>
               <div class="content tight">
                 <table class="grid-table">
                   <thead><tr><th style="width:180px">片段名</th><th>内容</th></tr></thead>
@@ -216,9 +222,10 @@
             <div class="card">
               <header><h2>选中项</h2><div class="spacer"></div><span class="hint" id="vibeSelName">未选择</span></header>
               <div class="content">
-                <div class="preview-box sm" id="vibePreview">参考图预览</div>
-                <div class="kv" style="margin-top:10px"><span class="k">信息提取 IE</span><div class="row"><input class="range" type="range" id="vibeIe" min="0" max="1" step="0.01" /><span class="range-val" id="vibeIeVal">1.00</span></div></div>
-                <div class="kv"><span class="k">参考强度 RS</span><div class="row"><input class="range" type="range" id="vibeRs" min="0" max="1" step="0.01" /><span class="range-val" id="vibeRsVal">0.60</span></div></div>
+                <div class="preview-box sm clickable" id="vibePreview" title="点击选择参考图">参考图预览</div>
+                <div class="kv" style="margin-top:10px" id="vibeIeRangeRow"><span class="k">信息提取 IE</span><div class="row"><input class="range" type="range" id="vibeIe" min="0.01" max="1" step="0.01" /><span class="range-val" id="vibeIeVal">1.00</span></div></div>
+                <div class="kv" id="vibeIeSelectRow" hidden><span class="k">信息提取 IE 档位</span><div class="row"><select class="select" id="vibeIeSelect"></select><span class="note">来自 .naiv4vibe 内置档位</span></div></div>
+                <div class="kv"><span class="k">参考强度 RS</span><div class="row"><input class="range" type="range" id="vibeRs" min="0.01" max="1" step="0.01" /><span class="range-val" id="vibeRsVal">0.60</span></div></div>
                 <div class="kv"><span class="k">启用</span><div class="row"><span class="switch"><input type="checkbox" id="vibeEnabled" /><span class="track"></span></span></div></div>
                 <div class="row"><button class="btn primary" id="vibeApply">应用修改</button><button class="btn danger" id="vibeRemove">移除选中</button></div>
                 <div class="note" style="margin-top:8px">V4.5 / V5 模型会走 .naiv4vibe 编码缓存，NAI3 直接把参考图转成 base64 发送。</div>
@@ -235,7 +242,7 @@
             <div class="card">
               <header><h2>图生图源图片</h2><div class="spacer"></div><span class="hint" id="img2imgName">未选择</span></header>
               <div class="content">
-                <div class="preview-box" id="img2imgPreview">未选择图片</div>
+                <div class="preview-box clickable" id="img2imgPreview" title="点击选择图片">未选择图片</div>
                 <div class="row" style="margin-top:8px"><button class="btn primary" id="img2imgPick">选择图片</button><button class="btn danger" id="img2imgClear">清除</button></div>
               </div>
             </div>
@@ -244,7 +251,7 @@
             <div class="card">
               <header><h2>参数</h2></header>
               <div class="content">
-                <div class="kv"><span class="k">Strength</span><div class="row"><input class="range" type="range" id="img2imgStrength" min="0" max="0.99" step="0.01" /><span class="range-val" id="img2imgStrengthVal">0.01</span></div></div>
+                <div class="kv"><span class="k">Strength</span><div class="row"><input class="range" type="range" id="img2imgStrength" min="0.01" max="0.99" step="0.01" /><span class="range-val" id="img2imgStrengthVal">0.01</span></div></div>
                 <div class="kv"><span class="k">Noise</span><div class="row"><input class="range" type="range" id="img2imgNoise" min="0" max="0.99" step="0.01" /><span class="range-val" id="img2imgNoiseVal">0.00</span></div></div>
                 <div class="note">官方文档：Strength 越高越贴近原图；Noise 只影响带噪声的采样器。</div>
               </div>
@@ -278,7 +285,7 @@
                 </div>
               </div>
               <div class="two" style="margin-top:12px">
-                <label class="field"><span class="lbl">每张图片处理次数</span><input class="input" type="number" id="directorIterations" min="1" /></label>
+                <label class="field"><span class="lbl">每张图片处理次数</span><input class="input" type="number" id="directorIterations" min="1" max="100" /></label>
                 <label class="field"><span class="lbl">处理范围</span>
                   <div class="pills" id="directorMode"><button class="active" data-batch="0">处理所选图片</button><button data-batch="1">处理文件夹</button></div>
                 </label>
@@ -332,7 +339,7 @@
               <div class="spacer"></div>
               <span class="note" id="picInfo"></span>
               <button class="btn sm" id="logQueryAnlas">查询 Anlas 余额</button>
-              <button class="btn sm" id="logClear">清空</button>
+              <button class="btn sm" id="logClear">清空日志</button>
             </div>
             <div class="log-list" id="logList"></div>
           </div>
@@ -347,6 +354,7 @@
             <div class="content">
               <p class="note" style="margin-top:0">随机组合画师串生成画风的批量生成工具，面向训练集场景。</p>
               <div class="row"><button class="btn sm" id="aboutTutorial">使用文档</button><button class="btn sm" id="aboutRepo">开源地址</button></div>
+              <img class="mascot" src="img/about.png" alt="" />
             </div>
           </div>
           <div class="card" style="margin-top:14px">
@@ -358,14 +366,25 @@
               <div class="link">Prompt 在线解析 <a href="#" data-url="https://spell.novelai.dev/">spell.novelai.dev</a></div>
               <div class="link">在线图片反推 <a href="#" data-url="https://huggingface.co/spaces/SmilingWolf/wd-tagger">wd-tagger</a></div>
               <div class="link">获取更多随机 prompt <a href="#" data-url="https://pan.baidu.com/s/1CTFTVIo7vKzDRy62LNxMMw?pwd=ktur">百度网盘</a></div>
+              <div class="link">Roll 文档 <a href="#" data-url="https://docs.qq.com/sheet/DRFdBdGxZaXdkc3pP?tab=7mb6q1">docs.qq.com/sheet</a></div>
+              <div class="link">AI 绘画工具书 <a href="#" data-url="https://docs.qq.com/doc/p/230e7ada2a60d8e347d639edd5521f5e62332fe9">docs.qq.com/doc</a></div>
             </div>
           </div>
           <div class="card" style="margin-top:14px">
             <header><h2>免责声明</h2></header>
-            <div class="content"><div class="doc-list">本软件仅用于学习跟交流使用，软件永久免费。
+            <div class="content"><div class="doc-list">本软件仅用于学习跟交流使用，软件永久免费
 
 开发者不对用户使用本软件可能引发的任何法律责任或损失承担责任。
-用户应对其使用本软件及其结果负全部责任。</div></div>
+用户应对其使用本软件及其结果负全部责任。
+
+请确保文件来源可信，避免拿到被有心人二次修改过的软件
+
+运行前请确认魔法工具已开启且能正常访问nai3页面
+软件设置每次运行中间有延迟是为了防止账号被恶意使用而导致的封号
+
+请不要连续执行过多次数
+
+意见与bug反馈群：119125703</div></div>
           </div>
         </div>
       </section>

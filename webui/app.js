@@ -8,6 +8,16 @@
   const $ = (id) => document.getElementById(id);
   const $$ = (sel, root) => Array.prototype.slice.call((root || document).querySelectorAll(sel));
 
+  // 把输入值收进控件自身声明的 min / max（HTML 只做校验，不会自动截断手输的值）
+  function clampToInput(el, value) {
+    let result = value;
+    const min = el.min === '' ? NaN : parseFloat(el.min);
+    const max = el.max === '' ? NaN : parseFloat(el.max);
+    if (!isNaN(min)) result = Math.max(min, result);
+    if (!isNaN(max)) result = Math.min(max, result);
+    return result;
+  }
+
   /* ---------------- 桥接层 ---------------- */
   const bridge = {
     available: !!(window.chrome && window.chrome.webview),
@@ -24,7 +34,7 @@
   const ui = {
     connected: false,
     theme: 'dark',
-    highlight: true,
+    highlight: false,
     logFilter: 'all',
     logs: [],
     directorTab: 0,
@@ -82,6 +92,9 @@
         break;
       case 'vibe-options':
         applyVibeOptions(data);
+        break;
+      case 'vibe-preview':
+        applyVibePreview(data);
         break;
       case 'wildcards':
         state.wildcards = data.items || [];
@@ -162,7 +175,7 @@
         }
         break;
       case 'tag-suggest':
-        showSuggestions(data.items || []);
+        mergeSuggestions(data.items || []);
         break;
       case 'toast':
         toast(data.level || 'info', data.text || '');
@@ -327,17 +340,18 @@
   }
 
   function renderHighlight() {
+    const pos = $('posPrompt').value;
+    const neg = $('negPrompt').value;
+    const words = pos.split(/[,，\n]/).filter((w) => w.trim().length > 0).length;
+    $('posCount').textContent = words + ' 个片段';
+
     if (!ui.highlight) {
       $('posPreview').innerHTML = '';
       $('negPreview').innerHTML = '';
       return;
     }
-    const pos = $('posPrompt').value;
-    const neg = $('negPrompt').value;
-    $('posPreview').innerHTML = escapeHtml(pos).replace(/\n/g, '<br>') && highlightText(pos);
+    $('posPreview').innerHTML = highlightText(pos);
     $('negPreview').innerHTML = highlightText(neg);
-    const words = pos.split(/[,，\n]/).filter((w) => w.trim().length > 0).length;
-    $('posCount').textContent = words + ' 个片段';
   }
 
   $('posHl').onclick = () => {
@@ -415,8 +429,13 @@
   function renderConfigs() {
     const cfg = state.configs || { names: [], current: '' };
     const sel = $('presetSelect');
-    sel.innerHTML = '';
     const names = cfg.names || [];
+    // 内容没变就不重建，免得把已经展开的下拉列表顶掉
+    const key = names.join('\u0001') + '\u0002' + (cfg.current || '');
+    if (sel.dataset.key === key) return;
+    sel.dataset.key = key;
+
+    sel.innerHTML = '';
     if (!names.length) {
       const opt = document.createElement('option');
       opt.value = '';
@@ -435,6 +454,8 @@
   $('presetSelect').onchange = (e) => {
     if (e.target.value) send('config:load', { name: e.target.value });
   };
+  // 旧版点一下下拉就会重新扫描配置目录，这里保持一致
+  $('presetSelect').addEventListener('focus', () => send('config:list'));
   $('presetSave').onclick = () => {
     const name = $('presetSelect').value;
     if (!name) { $('presetSaveAs').click(); return; }
@@ -457,6 +478,19 @@
   $('presetFolder').onclick = () => send('config:openFolder');
 
   /* ---------------- 描述符 -> 控件 ---------------- */
+  // 取值范围由 C# 侧的 PropertyRanges 提供，与旧版 PicProperty / NumericUpDown 保持一致
+  function descRange(desc, key, fallback) {
+    const value = desc[key];
+    return (value === undefined || value === null) ? fallback : value;
+  }
+
+  function clampToDesc(value, desc) {
+    let result = value;
+    if (desc.min !== undefined && desc.min !== null) result = Math.max(desc.min, result);
+    if (desc.max !== undefined && desc.max !== null) result = Math.min(desc.max, result);
+    return result;
+  }
+
   function descriptorControl(desc, onChange) {
     const wrap = document.createElement('label');
     wrap.className = 'field';
@@ -522,15 +556,19 @@
     row.className = 'row';
     const input = document.createElement('input');
     input.className = 'input grow';
-    if (desc.type === 'int') { input.type = 'number'; input.step = '1'; }
-    else if (desc.type === 'float') { input.type = 'number'; input.step = '0.1'; }
+    if (desc.type === 'int') { input.type = 'number'; input.step = descRange(desc, 'step', 1); }
+    else if (desc.type === 'float') { input.type = 'number'; input.step = descRange(desc, 'step', 0.1); }
     else if (desc.hint === 'password') input.type = 'password';
     else input.type = 'text';
+    if (desc.min !== undefined && desc.min !== null) input.min = desc.min;
+    if (desc.max !== undefined && desc.max !== null) input.max = desc.max;
     input.value = desc.value == null ? '' : desc.value;
     input.addEventListener('change', () => {
       let value = input.value;
       if (desc.type === 'int') value = parseInt(value, 10) || 0;
       else if (desc.type === 'float') value = parseFloat(value) || 0;
+      value = clampToDesc(value, desc);
+      input.value = value;
       onChange(desc.name, value);
     });
     row.appendChild(input);
@@ -655,7 +693,11 @@
         const el = $(id);
         el.addEventListener('change', () => {
           let value = el.value;
-          if (isNumber) value = isFloat ? (parseFloat(value) || 0) : (parseInt(value, 10) || 0);
+          if (isNumber) {
+            value = isFloat ? (parseFloat(value) || 0) : (parseInt(value, 10) || 0);
+            value = clampToInput(el, value);
+            el.value = value;
+          }
           send('artist:set', { name: key, value: value });
         });
       };
@@ -668,6 +710,8 @@
       bind('artistMin', 'min', true);
       bind('artistMax', 'max', true);
       $('artistModify').addEventListener('change', () => send('artist:set', { name: 'modify', value: $('artistModify').checked }));
+      $('artistInsertFixed').onclick = () => insertIntoPrompt('<固定画师>');
+      $('artistInsertRandom').onclick = () => insertIntoPrompt('<随机画师>');
     }
     $('artistFixed').value = a.fixed == null ? '' : a.fixed;
     $('artistRandom').value = a.random == null ? '' : a.random;
@@ -757,8 +801,16 @@
     $('quickSeed').value = value;
     send('param:set', { name: 'Seeds', value: value });
   };
-  $('quickRunNum').addEventListener('change', () => send('param:set', { name: 'RunNum', value: parseInt($('quickRunNum').value, 10) || 1 }));
-  $('quickKeepParams').addEventListener('change', () => send('param:set', { name: 'RunKeepParams', value: parseInt($('quickKeepParams').value, 10) || 0 }));
+  $('quickRunNum').addEventListener('change', () => {
+    const value = clampToInput($('quickRunNum'), parseInt($('quickRunNum').value, 10) || 1);
+    $('quickRunNum').value = value;
+    send('param:set', { name: 'RunNum', value: value });
+  });
+  $('quickKeepParams').addEventListener('change', () => {
+    const value = clampToInput($('quickKeepParams'), parseInt($('quickKeepParams').value, 10) || 1);
+    $('quickKeepParams').value = value;
+    send('param:set', { name: 'RunKeepParams', value: value });
+  });
   $('runMinus').onclick = () => send('param:set', { name: 'RunNum', value: Math.max(1, (parseInt(state.pic.RunNum, 10) || 1) - 1) });
   $('runPlus').onclick = () => send('param:set', { name: 'RunNum', value: (parseInt(state.pic.RunNum, 10) || 1) + 1 });
   $('openOutput').onclick = () => send('output:open');
@@ -904,15 +956,43 @@
     });
   }
 
+  function escapeRegExp(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  // 与旧版 Tools.InsertTextToTextBox 一致：已有就删掉，没有就在光标处插入并补齐逗号
   function insertIntoPrompt(text) {
     const el = $('posPrompt');
-    const start = el.selectionStart == null ? el.value.length : el.selectionStart;
-    const end = el.selectionEnd == null ? start : el.selectionEnd;
-    el.value = el.value.slice(0, start) + text + el.value.slice(end);
-    el.selectionStart = el.selectionEnd = start + text.length;
+    const value = el.value;
+    const cursor = el.selectionStart == null ? value.length : el.selectionStart;
+    let next;
+    let caret;
+
+    if (value.indexOf(text) >= 0) {
+      // 与旧版 Tools.InsertTextToTextBox 一致：先删掉「占位符 + 尾随逗号」，再删残留的占位符
+      const pattern = new RegExp(escapeRegExp(text) + '\\s*,', 'g');
+      const first = new RegExp(escapeRegExp(text) + '\\s*,').exec(value);
+      next = value.replace(pattern, '').split(text).join('');
+      caret = first && first.index < cursor ? Math.max(0, cursor - first[0].length) : cursor;
+    } else {
+      const needLeft = cursor > 0 && value.charAt(cursor - 1) !== ',';
+      const needRight = cursor < value.length && value.charAt(cursor) !== ',';
+      const commas = (needLeft ? ',' : '') + (needRight ? ',' : '');
+      let base = value;
+      let pos = cursor;
+      if (commas) {
+        base = value.slice(0, cursor) + commas + value.slice(cursor);
+        pos = cursor + (needLeft ? 1 : 0);
+      }
+      next = pos === 0 ? text + base : base.slice(0, pos) + text + base.slice(pos);
+      caret = pos + text.length + (needRight ? 1 : 0);
+    }
+
+    el.value = next;
     el.focus();
+    el.selectionStart = el.selectionEnd = Math.min(caret, next.length);
+    send('text:set', { field: 'prompt', value: next });
     renderHighlight();
-    send('text:set', { field: 'prompt', value: el.value });
   }
 
   /* ---------------- Vibe ---------------- */
@@ -922,6 +1002,7 @@
       vibeBuilt = true;
       $('vibeAdd').onclick = () => send('vibe:pick');
       $('vibeBundle').onclick = () => send('vibe:pick');
+      $('vibePreview').onclick = () => send('vibe:pick');
       $('vibeApply').onclick = () => {
         if (ui.selectedVibe < 0) return;
         send('vibe:update', {
@@ -937,6 +1018,12 @@
       };
       $('vibeIe').addEventListener('input', () => { $('vibeIeVal').textContent = Number($('vibeIe').value).toFixed(2); });
       $('vibeRs').addEventListener('input', () => { $('vibeRsVal').textContent = Number($('vibeRs').value).toFixed(2); });
+      $('vibeIeSelect').addEventListener('change', () => {
+        const value = parseFloat($('vibeIeSelect').value);
+        if (isNaN(value)) return;
+        $('vibeIe').value = value;
+        $('vibeIeVal').textContent = Number(value).toFixed(2);
+      });
     }
 
     if (ui.selectedVibe < 0 && state.vibeSelected >= 0) ui.selectedVibe = state.vibeSelected;
@@ -1058,7 +1145,30 @@
   }
 
   function applyVibeOptions(data) {
-    $('vibeSelName').textContent = '可用 IE：' + (data.options || []).join(', ');
+    const options = data.options || [];
+    const select = $('vibeIeSelect');
+    select.innerHTML = '';
+    options.forEach((value) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = value;
+      select.appendChild(opt);
+    });
+
+    // .naiv4vibe 自带档位时用下拉替代滑条，和旧版的 cmbVibeIE / nudVibeIE 一致
+    $('vibeIeSelectRow').hidden = options.length === 0;
+    $('vibeIeRangeRow').hidden = options.length > 0;
+    if (options.length) {
+      const current = Number($('vibeIe').value);
+      const matched = options.filter((value) => Math.abs(Number(value) - current) < 1e-6)[0];
+      select.value = matched === undefined ? options[0] : matched;
+    }
+  }
+
+  function applyVibePreview(data) {
+    if (data.url) setPreviewImage('vibePreview', data.url);
+    else $('vibePreview').innerHTML = '参考图预览';
+    applyVibeOptions(data);
   }
 
   /* ---------------- 图生图 ---------------- */
@@ -1067,6 +1177,7 @@
     if (!img2imgBuilt) {
       img2imgBuilt = true;
       $('img2imgPick').onclick = () => send('img2img:pick');
+      $('img2imgPreview').onclick = () => send('img2img:pick');
       $('img2imgClear').onclick = () => { ui.img2imgPreview = ''; send('img2img:clear'); };
       $('img2imgStrength').addEventListener('input', () => { $('img2imgStrengthVal').textContent = Number($('img2imgStrength').value).toFixed(2); });
       $('img2imgNoise').addEventListener('input', () => { $('img2imgNoiseVal').textContent = Number($('img2imgNoise').value).toFixed(2); });
@@ -1113,7 +1224,11 @@
         send('director:pickFolder');
       };
       $('directorOpenOutput').onclick = () => send('output:open');
-      $('directorIterations').addEventListener('change', () => send('director:set', { field: 'iterations', value: parseInt($('directorIterations').value, 10) || 1 }));
+      $('directorIterations').addEventListener('change', () => {
+        const value = clampToInput($('directorIterations'), parseInt($('directorIterations').value, 10) || 1);
+        $('directorIterations').value = value;
+        send('director:set', { field: 'iterations', value: value });
+      });
       $('colorizePrompt').addEventListener('change', () => send('director:set', { field: 'colorizePrompt', value: $('colorizePrompt').value }));
       $('colorizeDefry').addEventListener('change', () => send('director:set', { field: 'colorizeDefry', value: parseInt($('colorizeDefry').value, 10) }));
       $('emotionPrompt').addEventListener('change', () => send('director:set', { field: 'emotionPrompt', value: $('emotionPrompt').value }));
@@ -1191,75 +1306,229 @@
     if (file) readMetadataFile(file);
   });
 
-  /* ---------------- 标签补全 ---------------- */
+  /* ---------------- 标签补全（对齐旧版 AutoCompleteHelper） ---------------- */
+  const AC_STATIC_TAGS = ['<固定画师>', '<随机画师>', '<随机提示词>'];
+  const AC_MAX_ITEMS = 40;
+
   let acTarget = null;
+  let acList = null;
   let acTimer = null;
+  let acItems = [];
+  let acIndex = -1;
+
+  function acFieldName(el) {
+    return el.id === 'negPrompt' ? 'negativePrompt' : 'prompt';
+  }
+
+  function hideList() {
+    if (acList) acList.style.display = 'none';
+    acItems = [];
+    acIndex = -1;
+  }
+
   function hideSuggestions() {
-    const list = document.querySelector('.ac-list');
-    if (list) list.remove();
+    hideList();
     acTarget = null;
   }
 
-  function showSuggestions(items) {
-    const list = document.querySelector('.ac-list');
-    if (!list || !items.length) { hideSuggestions(); return; }
-    list.innerHTML = '';
-    items.forEach((item) => {
-      const div = document.createElement('div');
-      div.textContent = item;
-      div.onmousedown = (e) => {
-        e.preventDefault();
-        const el = acTarget;
-        const value = el.value;
-        const cursor = el.selectionStart;
-        const before = value.slice(0, cursor);
-        const lt = before.lastIndexOf('<');
-        el.value = before.slice(0, lt + 1) + item + '>' + value.slice(cursor);
-        el.selectionStart = el.selectionEnd = lt + 1 + item.length + 1;
-        renderHighlight();
-        send('text:set', { field: 'prompt', value: el.value });
-        hideSuggestions();
-      };
-      list.appendChild(div);
-    });
-    list.style.display = 'block';
+  // 与旧版 AutoCompleteHelper.GetCurrentWord 一致：向前一直取到 , { } ( ) 为止
+  function currentWord(el) {
+    const pos = el.selectionStart;
+    const text = el.value;
+    let start = pos - 1;
+    while (start >= 0) {
+      const ch = text[start];
+      if (ch === ',' || ch === '{' || ch === '}' || ch === '(' || ch === ')') break;
+      start--;
+    }
+    start++;
+    while (start < pos && /\s/.test(text[start])) start++;
+    return { word: text.slice(start, pos), start: start };
   }
 
-  $('posPrompt').addEventListener('input', () => {
-    const el = $('posPrompt');
-    const cursor = el.selectionStart;
-    const before = el.value.slice(0, cursor);
-    const lt = before.lastIndexOf('<');
-    if (lt < 0 || /[\s,]/.test(before.slice(lt + 1))) { hideSuggestions(); return; }
-    const prefix = before.slice(lt + 1);
-    acTarget = el;
-    clearTimeout(acTimer);
-    acTimer = setTimeout(() => {
-      const local = (state.wildcards || [])
-        .map((w) => (w.name || '').replace(/\.txt$/i, ''))
-        .filter((n) => n.toLowerCase().indexOf(prefix.toLowerCase()) >= 0);
-      if (local.length) {
-        ensureAcList();
-        showSuggestions(local.slice(0, 8));
-      }
-      send('tag:suggest', { prefix: prefix });
-    }, 160);
-  });
+  // 用镜像元素量出光标位置，把候选框贴到光标下方
+  function caretPosition(el) {
+    const mirror = document.createElement('div');
+    const cs = window.getComputedStyle(el);
+    ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'lineHeight',
+      'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth',
+      'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'textIndent',
+      'tabSize'].forEach((k) => { mirror.style[k] = cs[k]; });
+    mirror.style.position = 'absolute';
+    mirror.style.visibility = 'hidden';
+    mirror.style.top = '0';
+    mirror.style.left = '0';
+    mirror.style.width = el.clientWidth + 'px';
+    mirror.style.whiteSpace = 'pre-wrap';
+    mirror.style.wordWrap = 'break-word';
+    mirror.style.overflow = 'hidden';
+    mirror.textContent = el.value.slice(0, el.selectionStart);
 
-  function ensureAcList() {
-    const box = document.querySelector('.ac-anchor');
-    if (!box) return null;
-    let list = box.querySelector('.ac-list');
+    const marker = document.createElement('span');
+    marker.textContent = '\u200b';
+    mirror.appendChild(marker);
+
+    const host = el.parentNode || document.body;
+    host.appendChild(mirror);
+    const top = marker.offsetTop - el.scrollTop;
+    const left = marker.offsetLeft;
+    host.removeChild(mirror);
+    return { top: top, left: left };
+  }
+
+  function ensureAcList(el) {
+    const host = (el && el.parentNode) || document.querySelector('.ac-anchor');
+    if (!host) return null;
+    let list = host.querySelector(':scope > .ac-list');
     if (!list) {
       list = document.createElement('div');
       list.className = 'ac-list';
       list.style.display = 'none';
-      box.appendChild(list);
+      host.appendChild(list);
     }
+    acList = list;
     return list;
   }
 
-  $('posPrompt').addEventListener('blur', () => setTimeout(hideSuggestions, 150));
+  function buildLocalSuggestions(word) {
+    const lower = word.toLowerCase();
+    const seen = {};
+    const items = [];
+    const push = (text) => {
+      if (!text || seen[text]) return;
+      seen[text] = true;
+      items.push(text);
+    };
+
+    AC_STATIC_TAGS.forEach((tag) => { if (tag.toLowerCase().indexOf(lower) >= 0) push(tag); });
+
+    (state && state.wildcards ? state.wildcards : []).forEach((item) => {
+      const name = '<' + String(item.name || '').replace(/\.txt$/i, '') + '>';
+      if (name.toLowerCase().indexOf(lower) >= 0) push(name);
+    });
+
+    return items;
+  }
+
+  function showSuggestions(items) {
+    if (!acTarget || !items || !items.length) { hideList(); return; }
+
+    const list = ensureAcList(acTarget);
+    if (!list) return;
+
+    acItems = items;
+    if (acIndex < 0 || acIndex >= items.length) acIndex = 0;
+
+    list.innerHTML = '';
+    items.forEach((item, i) => {
+      const div = document.createElement('div');
+      div.textContent = item;
+      if (i === acIndex) div.className = 'sel';
+      div.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        acIndex = i;
+        confirmSuggestion();
+      });
+      list.appendChild(div);
+    });
+
+    const caret = caretPosition(acTarget);
+    const lineHeight = parseFloat(window.getComputedStyle(acTarget).lineHeight) || 18;
+    list.style.left = Math.max(0, acTarget.offsetLeft + caret.left) + 'px';
+    list.style.top = (acTarget.offsetTop + caret.top + lineHeight + 2) + 'px';
+    list.style.display = 'block';
+
+    const selected = list.querySelector('.sel');
+    if (selected && selected.scrollIntoView) selected.scrollIntoView({ block: 'nearest' });
+  }
+
+  function mergeSuggestions(items) {
+    if (!acTarget || !items || !items.length) return;
+
+    const seen = {};
+    const merged = acItems.slice();
+    merged.forEach((text) => { seen[text] = true; });
+
+    let added = false;
+    items.forEach((text) => {
+      if (!text || seen[text]) return;
+      seen[text] = true;
+      merged.push(text);
+      added = true;
+    });
+
+    if (added) showSuggestions(merged.slice(0, AC_MAX_ITEMS));
+  }
+
+  function confirmSuggestion() {
+    if (!acTarget || acIndex < 0 || acIndex >= acItems.length) return;
+
+    const item = acItems[acIndex];
+    const el = acTarget;
+    const word = currentWord(el);
+    const value = el.value;
+
+    el.value = value.slice(0, word.start) + item + value.slice(word.start + word.word.length);
+    el.selectionStart = el.selectionEnd = word.start + item.length;
+
+    renderHighlight();
+    send('text:set', { field: acFieldName(el), value: el.value });
+    hideSuggestions();
+  }
+
+  function requestSuggestions(el) {
+    // 换到另一个输入框时，先把上一个候选框收起来，但不要清掉 acTarget 之外的请求
+    if (acList && acTarget && acTarget !== el) acList.style.display = 'none';
+
+    acTarget = el;
+    acIndex = -1;
+
+    const word = currentWord(el).word;
+    if (!word) { hideList(); return; }
+
+    showSuggestions(buildLocalSuggestions(word).slice(0, AC_MAX_ITEMS));
+
+    // 以 "<" 开头时只找片段名，其余情况再去查标签库
+    if (word.charAt(0) !== '<') send('tag:suggest', { prefix: word });
+  }
+
+  ['posPrompt', 'negPrompt'].forEach((id) => {
+    const el = $(id);
+
+    el.addEventListener('input', () => {
+      clearTimeout(acTimer);
+      acTimer = setTimeout(() => requestSuggestions(el), 100);
+    });
+
+    el.addEventListener('keydown', (e) => {
+      const visible = !!acList && acTarget === el && acList.style.display === 'block' && acItems.length > 0;
+      if (!visible) return;
+
+      if (e.key === 'ArrowDown') {
+        acIndex = (acIndex + 1) % acItems.length;
+        showSuggestions(acItems);
+        e.preventDefault();
+      } else if (e.key === 'ArrowUp') {
+        acIndex = (acIndex - 1 + acItems.length) % acItems.length;
+        showSuggestions(acItems);
+        e.preventDefault();
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        confirmSuggestion();
+        e.preventDefault();
+      } else if (e.key === 'Escape') {
+        hideSuggestions();
+        e.preventDefault();
+      }
+    });
+
+    // 失焦后如果焦点落在另一个带补全的输入框上，就交给它接管，别把它的候选框一起关掉
+    el.addEventListener('blur', () => {
+      setTimeout(() => {
+        if (document.activeElement !== el && acTarget === el) hideSuggestions();
+      }, 150);
+    });
+    el.addEventListener('scroll', () => { if (acTarget === el) hideList(); });
+  });
 
   /* ---------------- 关于页 ---------------- */
   $$('.about a[data-url]').forEach((a) => {

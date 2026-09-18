@@ -298,6 +298,16 @@ namespace AutoNai3Tools {
                 ["items"] = BuildVibeJson(),
                 ["selected"] = VibeSelectedIndex
             });
+
+            // 选中项变化时把参考图预览和可用的「信息抽取」档位一起送给前端
+            VibeConfigData selected = null;
+            if (VibeSelectedIndex >= 0 && VibeSelectedIndex < vibeItems.Count)
+                selected = vibeItems[VibeSelectedIndex];
+
+            Post("vibe-preview", new JObject {
+                ["url"] = selected == null ? null : CachePreviewFile(selected.Path, "vibe"),
+                ["options"] = selected == null ? new JArray() : GetVibeInformationOptions(selected.Path)
+            });
         }
 
         internal void PushWildcards() {
@@ -343,6 +353,28 @@ namespace AutoNai3Tools {
                 ["Api"] = "url"
             };
 
+        /// <summary>
+        /// 数值属性的取值范围，与旧版行为保持一致：
+        /// PicProperty 的 setter 会把 Steps 截断到 1~28、Scale 截断到 0~10 并保留一位小数。
+        /// </summary>
+        private static readonly Dictionary<string, PropertyRange> PropertyRanges =
+            new Dictionary<string, PropertyRange>(StringComparer.Ordinal) {
+                ["Steps"] = new PropertyRange(1, 28, 1),
+                ["Scale"] = new PropertyRange(0, 10, 0.1)
+            };
+
+        private sealed class PropertyRange {
+            public PropertyRange(double min, double max, double step) {
+                Min = min;
+                Max = max;
+                Step = step;
+            }
+
+            public double Min { get; }
+            public double Max { get; }
+            public double Step { get; }
+        }
+
         internal JArray BuildDescriptors(object target) {
             var array = new JArray();
             foreach (PropertyDescriptor descriptor in TypeDescriptor.GetProperties(target)) {
@@ -358,6 +390,13 @@ namespace AutoNai3Tools {
                 string hint;
                 if (PropertyHints.TryGetValue(descriptor.Name, out hint))
                     item["hint"] = hint;
+
+                PropertyRange range;
+                if (PropertyRanges.TryGetValue(descriptor.Name, out range)) {
+                    item["min"] = range.Min;
+                    item["max"] = range.Max;
+                    item["step"] = range.Step;
+                }
 
                 if (descriptor.PropertyType.IsEnum) {
                     item["options"] = BuildEnumOptions(descriptor.PropertyType);

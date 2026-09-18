@@ -106,6 +106,8 @@ main { min-height: 0; overflow: auto; padding: 14px; }
 .page { display: none; }
 .page.active { display: block; animation: fade .16s ease; }
 @keyframes fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+/* .kv / .row 等 display:flex|grid 规则会覆盖 UA 的 [hidden]，这里强制生效 */
+[hidden] { display: none !important; }
 
 /* ---------- 卡片 ---------- */
 .grid { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 14px; align-items: start; }
@@ -202,6 +204,7 @@ label.field .lbl { display: block; font-size: 11px; color: var(--muted); margin-
 .preview-box img { max-width: 100%; max-height: 460px; display: block; }
 .preview-box.sm { min-height: 120px; max-height: 190px; }
 .preview-box.sm img { max-height: 190px; }
+.preview-box.clickable { cursor: pointer; }
 
 .log-list { max-height: calc(100vh - 250px); overflow: auto; font-family: var(--mono); font-size: 12px; }
 .log-line { display: flex; gap: 8px; padding: 2px 12px; border-left: 2px solid transparent; }
@@ -259,6 +262,7 @@ table.grid-table tbody tr:hover td { background: var(--card-2); }
 .about a { color: var(--accent-2); text-decoration: none; }
 .about a:hover { text-decoration: underline; }
 .doc-list { white-space: pre-wrap; font-size: 12px; line-height: 1.7; color: var(--text-2); }
+.about .mascot { display: block; width: 100%; max-width: 300px; margin: 14px auto 0; border-radius: var(--radius-sm); }
 
 .ac-list { position: absolute; z-index: 40; background: var(--card); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); box-shadow: var(--shadow); max-height: 190px; overflow: auto; min-width: 220px; }
 .ac-list div { padding: 4px 10px; cursor: pointer; font-size: 12px; }
