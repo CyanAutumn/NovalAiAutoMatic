@@ -173,6 +173,7 @@
             this.btnDirectorToolsRemoveBGRun = new System.Windows.Forms.Button();
             this.tabPage4 = new System.Windows.Forms.TabPage();
             this.btnClearLog = new System.Windows.Forms.Button();
+            this.btnQueryAnlas = new System.Windows.Forms.Button();
             this.txtLog = new System.Windows.Forms.TextBox();
             this.tabPage6 = new System.Windows.Forms.TabPage();
             this.panel17 = new System.Windows.Forms.Panel();
@@ -2067,7 +2068,7 @@
             // 
             // tabPage4
             // 
-            this.tabPage4.Controls.Add(this.btnClearLog);
+            this.tabPage4.Controls.Add(this.btnQueryAnlas);
             this.tabPage4.Controls.Add(this.txtLog);
             this.tabPage4.Location = new System.Drawing.Point(4, 33);
             this.tabPage4.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
@@ -2076,6 +2077,17 @@
             this.tabPage4.TabIndex = 3;
             this.tabPage4.Text = "日志";
             this.tabPage4.UseVisualStyleBackColor = true;
+            // 
+            // btnQueryAnlas
+            // 
+            this.btnQueryAnlas.Location = new System.Drawing.Point(1520, 0);
+            this.btnQueryAnlas.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.btnQueryAnlas.Name = "btnQueryAnlas";
+            this.btnQueryAnlas.Size = new System.Drawing.Size(230, 34);
+            this.btnQueryAnlas.TabIndex = 2;
+            this.btnQueryAnlas.Text = "查询Anlas余额";
+            this.btnQueryAnlas.UseVisualStyleBackColor = true;
+            this.btnQueryAnlas.Click += new System.EventHandler(this.btnQueryAnlas_Click);
             // 
             // btnClearLog
             // 
@@ -2463,6 +2475,7 @@
         private System.Windows.Forms.Button btnDirectorToolsRemoveBGRun;
         public System.Windows.Forms.TabPage tabPage4;
         public System.Windows.Forms.Button btnClearLog;
+        public System.Windows.Forms.Button btnQueryAnlas;
         public System.Windows.Forms.TextBox txtLog;
         public System.Windows.Forms.TabPage tabPage6;
         public System.Windows.Forms.Button btnTutorial;

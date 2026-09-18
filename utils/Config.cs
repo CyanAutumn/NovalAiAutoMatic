@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -19,6 +19,7 @@ namespace AutoNai3Tools.utils {
         public int? SleepTimeLongLow { get; set; }
         public int? SleepTimeLongHigh { get; set; }
         public string UiLanguage { get; set; }
+        public bool? AnlasTracking { get; set; }
     }
 
     internal class SystemConfigRepository {

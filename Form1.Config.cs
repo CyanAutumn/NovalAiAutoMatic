@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
+using AutoNai3Tools.body;
 using AutoNai3Tools.utils;
 
 namespace AutoNai3Tools {
@@ -170,6 +171,11 @@ namespace AutoNai3Tools {
             }
             picProps.VarietyNum = data.VarietyNum;
             picProps.Model = data.ModelSelect;
+            if (BodyTools.IsRetired(picProps.Model)) {
+                Logger.Warn("该模型已被 NovelAI 官方下线，已自动切换为 NAI3",
+                    context: Logger.Context(("model", data.ModelSelect)));
+                picProps.Model = BodyTools.Model.Nai3;
+            }
             settingProps.OutputFileNameFormat = data.OutputFileNameFormat;
 
             dgvVibe.Rows.Clear();
@@ -198,7 +204,8 @@ namespace AutoNai3Tools {
                 SleepTimeShortHigh = settingProps.SleepTimeShortHigh,
                 SleepTimeLongLow = settingProps.SleepTimeLongLow,
                 SleepTimeLongHigh = settingProps.SleepTimeLongHigh,
-                UiLanguage = settingProps.UiLanguage.ToCultureName()
+                UiLanguage = settingProps.UiLanguage.ToCultureName(),
+                AnlasTracking = settingProps.AnlasTracking
             };
         }
 
@@ -229,6 +236,7 @@ namespace AutoNai3Tools {
                 settingProps.SleepTimeLongHigh = data.SleepTimeLongHigh.Value;
             if (!string.IsNullOrWhiteSpace(data.UiLanguage))
                 settingProps.UiLanguage = UiLanguageExtensions.FromCultureName(data.UiLanguage);
+            settingProps.AnlasTracking = data.AnlasTracking ?? settingProps.AnlasTracking;
 
             return apiNormalized;
         }
@@ -367,12 +375,16 @@ namespace AutoNai3Tools {
             InitTagSnippetDGV();
             propertyGrid1.Refresh();
             propertyGridSettings.Refresh();
+
+            BeginStartupAnlasRefresh();
         }
 
         private void propertyGrid1_PropertyValueChanged(object s, PropertyValueChangedEventArgs e) {
             if (e.ChangedItem?.PropertyDescriptor?.Name == nameof(picProps.WildcardFolderPath)) {
                 InitTagSnippetDGV();
             }
+
+            RefreshAnlasButtonText();
         }
 
         private void cmbConfigName_MouseClick(object sender, MouseEventArgs e) {

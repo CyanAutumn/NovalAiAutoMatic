@@ -21,10 +21,28 @@ namespace AutoNai3Tools.body {
             Nai4_5_Curated,
             [ModelInfo(typeof(Nai4_5Full), "nai-diffusion-4-5-full", "v4-5full")]
             Nai4_5_Full,
+            [ModelInfo(typeof(Nai5Curated), "nai-diffusion-5-curated", "v5curated")]
+            Nai5_Curated,
+            [ModelInfo(typeof(Nai5Full), "nai-diffusion-5-full", "v5full")]
+            Nai5_Full,
         }
 
         private static readonly IReadOnlyDictionary<Model, ModelInfoAttribute> ModelInfos;
         private static readonly IReadOnlyDictionary<string, Model> ApiNameLookup;
+
+        // NovelAI 已下线 V2（官方文档标记为 Retired），不再出现在模型选择列表中。
+        private static readonly Model[] retiredModels = {
+            Model.Nai2
+        };
+
+        private static readonly Model[] selectableModels = Enum.GetValues(typeof(Model))
+            .Cast<Model>()
+            .Where(model => !retiredModels.Contains(model))
+            .ToArray();
+
+        public static IReadOnlyList<Model> SelectableModels => selectableModels;
+
+        public static bool IsRetired(Model modelName) => retiredModels.Contains(modelName);
 
         static BodyTools() {
             ModelInfos = Enum.GetValues(typeof(Model))
@@ -80,6 +98,20 @@ namespace AutoNai3Tools.body {
                 throw new InvalidOperationException($"模型 {model} 缺少 ModelInfoAttribute 定义。");
 
             return attribute;
+        }
+    }
+
+    public class ModelTypeConverter : System.ComponentModel.EnumConverter {
+        public ModelTypeConverter() : base(typeof(BodyTools.Model)) { }
+
+        public override bool GetStandardValuesSupported(System.ComponentModel.ITypeDescriptorContext context) => true;
+
+        public override bool GetStandardValuesExclusive(System.ComponentModel.ITypeDescriptorContext context) => true;
+
+        public override System.ComponentModel.TypeConverter.StandardValuesCollection GetStandardValues(
+            System.ComponentModel.ITypeDescriptorContext context) {
+            return new System.ComponentModel.TypeConverter.StandardValuesCollection(
+                BodyTools.SelectableModels.ToArray());
         }
     }
 

@@ -17,6 +17,10 @@ namespace AutoNai3Tools.utils {
         [LocalizedDisplayName("Display_Proxy")]
         public string Proxy { get; set; }
 
+        [LocalizedCategory("Category_Auth")]
+        [LocalizedDisplayName("Display_AnlasTracking")]
+        public bool AnlasTracking { get; set; } = true;
+
         [LocalizedCategory("Category_Display")]
         [LocalizedDisplayName("Display_ClosePicPreview")]
         public bool ClosePicPreview { get; set; }

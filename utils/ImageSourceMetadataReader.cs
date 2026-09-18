@@ -26,8 +26,7 @@ namespace AutoNai3Tools.utils {
                 return false;
             }
 
-            string extension = Path.GetExtension(imagePath);
-            if (!".png".Equals(extension, StringComparison.OrdinalIgnoreCase)) {
+            if (!HasPngSignature(imagePath)) {
                 errorMessage = "当前仅支持 PNG 源数据读取。";
                 return false;
             }
@@ -69,6 +68,22 @@ namespace AutoNai3Tools.utils {
 
             errorMessage = "已找到文本块，但未识别到可用生成参数 JSON。";
             return false;
+        }
+
+        private static bool HasPngSignature(string path) {
+            try {
+                using (var stream = File.OpenRead(path)) {
+                    if (stream.Length < PngSignature.Length)
+                        return false;
+
+                    byte[] header = new byte[PngSignature.Length];
+                    int read = stream.Read(header, 0, header.Length);
+                    return read == header.Length && header.SequenceEqual(PngSignature);
+                }
+            }
+            catch {
+                return false;
+            }
         }
 
         private static List<TextChunk> ReadPngTextChunks(string path) {

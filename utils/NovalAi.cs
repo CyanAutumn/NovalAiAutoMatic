@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Drawing;
+using System.Globalization;
 using System.Runtime.Remoting.Messaging;
 using System.Text.RegularExpressions;
 using System.Net;
@@ -404,6 +405,12 @@ namespace AutoNai3Tools.utils {
             CancellationToken cancellationToken = default) {
             try {
                 string baseUrl = ApiEndpoint.ResolveBaseUrl(settingProps?.Api);
+                NovalAIBase naiBody = body as NovalAIBase;
+                bool trackAnlas = settingProps?.AnlasTracking ?? true;
+                AnlasAccount anlasBefore = trackAnlas
+                    ? await AnlasService.TryQueryAsync(baseUrl, token, proxy, cancellationToken).ConfigureAwait(false)
+                    : null;
+
                 var response = await Request.PostAsync(baseUrl, "/ai/generate-image", body.ToJson(), token, proxy,
                         cancellationToken)
                     .ConfigureAwait(false);
@@ -415,6 +422,8 @@ namespace AutoNai3Tools.utils {
                         context: Logger.Context(("originalPrompt", originalPrompt ?? body?.prompt),
                             ("seed", picProps.Seeds)));
                 }
+                await ReportAnlasUsageAsync(baseUrl, token, proxy, naiBody, anlasBefore, cancellationToken)
+                    .ConfigureAwait(false);
                 return pic;
             }
             catch (OperationCanceledException) {
@@ -427,6 +436,60 @@ namespace AutoNai3Tools.utils {
                     context: Logger.Context(("originalPrompt", originalPrompt ?? body?.prompt)));
                 return null;
             }
+        }
+
+        private async Task ReportAnlasUsageAsync(string baseUrl, string token, string proxy, NovalAIBase body,
+            AnlasAccount before, CancellationToken cancellationToken) {
+            if (before == null)
+                return;
+
+            try {
+                await Task.Delay(1500, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) {
+                return;
+            }
+
+            AnlasAccount after = await AnlasService.TryQueryFreshAsync(baseUrl, token, proxy, cancellationToken)
+                .ConfigureAwait(false);
+            if (after == null)
+                return;
+
+            int consumed = before.TotalAnlas - after.TotalAnlas;
+            if (consumed < 0)
+                consumed = 0;
+
+            var parameters = body?.parameters;
+            string estimateText = "-";
+            string parameterText = "-";
+            if (parameters != null) {
+                int estimate = AnlasService.EstimateCost(parameters.width, parameters.height, parameters.steps,
+                    parameters.n_samples, body.model);
+                estimateText = estimate.ToString(CultureInfo.InvariantCulture);
+
+                // 实测值按「参数组合」写入本地缓存，供生成按钮预估复用（Prompt 不影响消耗）。
+                AnlasCostCache.Record(
+                    AnlasCostCache.BuildKey(body.model, parameters.width, parameters.height, parameters.steps,
+                        parameters.n_samples, body.action, parameters.strength),
+                    consumed);
+                parameterText = string.Format(CultureInfo.InvariantCulture,
+                    "模型:{0} | 尺寸:{1}x{2} | Steps:{3} | 张数:{4} | 采样:{5}",
+                    body.model, parameters.width, parameters.height, parameters.steps, parameters.n_samples,
+                    parameters.sampler);
+            }
+
+            Logger.Info(
+                string.Format(CultureInfo.InvariantCulture, "Anlas 消耗：{0}（余额 {1} → {2}）| 预估 {3} | {4}",
+                    consumed, before.TotalAnlas, after.TotalAnlas, estimateText, parameterText),
+                context: Logger.Context(("consumedAnlas", consumed),
+                    ("anlasBefore", before.TotalAnlas),
+                    ("anlasAfter", after.TotalAnlas),
+                    ("estimatedAnlas", estimateText),
+                    ("model", body?.model),
+                    ("width", parameters?.width),
+                    ("height", parameters?.height),
+                    ("steps", parameters?.steps),
+                    ("nSamples", parameters?.n_samples)));
         }
     }
 }

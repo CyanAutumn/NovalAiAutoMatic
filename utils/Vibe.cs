@@ -174,7 +174,8 @@ namespace AutoNai3Tools.utils {
         }
 
         public static List<VibeData> GetVibe(BodyTools.Model model, List<VibeData> vibe_list, string token, string api = null) {
-            if (model == BodyTools.Model.Nai4_Full || model == BodyTools.Model.Nai4_5_Full || model == BodyTools.Model.Nai4_5_Curated || model == BodyTools.Model.Nai4_Preview) {
+            if (model == BodyTools.Model.Nai4_Full || model == BodyTools.Model.Nai4_5_Full || model == BodyTools.Model.Nai4_5_Curated || model == BodyTools.Model.Nai4_Preview
+                || model == BodyTools.Model.Nai5_Full || model == BodyTools.Model.Nai5_Curated) {
                 return ParseNai4_UP_Vibe(model, vibe_list, token, api);
             }
             return ParseOtherVibe(model, vibe_list);

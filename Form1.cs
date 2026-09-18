@@ -57,6 +57,7 @@ namespace AutoNai3Tools {
                 CaptureImg2ImgOptions);
             generationController = new GenerationController(generationDataProvider);
             AttachGenerationControllerEvents();
+            InitializeAnlasDisplay();
 
             var directorProcessor = new DirectorToolProcessor();
             directorToolController = new DirectorToolController(directorProcessor, picProps, settingProps);
@@ -157,6 +158,11 @@ namespace AutoNai3Tools {
         }
 
         private void HandleSettingsPropertyValueChanged(object sender, PropertyValueChangedEventArgs e) {
+            if (e?.ChangedItem?.PropertyDescriptor?.Name == nameof(SettingProperty.AnlasTracking)) {
+                OnAnlasTrackingChanged();
+                return;
+            }
+
             if (e?.ChangedItem?.PropertyDescriptor?.Name != nameof(SettingProperty.UiLanguage))
                 return;
 
@@ -259,7 +265,7 @@ namespace AutoNai3Tools {
                 return;
             }
 
-            btnGenerate.Text = Properties.Resources.Button_Stop;
+            SetGenerateButtonRunning(true);
             btnGenerate.Enabled = true;
         }
 
@@ -328,7 +334,7 @@ namespace AutoNai3Tools {
         }
 
         private void ResetGenerationState() {
-            btnGenerate.Text = Properties.Resources.Button_Generate;
+            SetGenerateButtonRunning(false);
             btnGenerate.Enabled = true;
         }
 
@@ -360,8 +366,8 @@ namespace AutoNai3Tools {
         }
 
         private void RequestStopGeneration() {
-            btnGenerate.Text = Properties.Resources.Button_Stop;
             btnGenerate.Enabled = false;
+            RefreshAnlasButtonText();
             generationController.RequestStopGeneration();
         }
 

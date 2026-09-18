@@ -95,6 +95,11 @@ namespace AutoNai3Tools {
             if (TryGetBool(metadata, "dynamic_thresholding", out bool dynamicThresholding))
                 picProps.Decrisp = dynamicThresholding ? Switch.开 : Switch.关;
 
+            if (TryGetString(metadata, "qualityPresetId", out string qualityPresetId))
+                picProps.QualityToggle = !string.Equals(qualityPresetId, "none", StringComparison.OrdinalIgnoreCase);
+            else if (TryGetInt(metadata, "tag_hint_qt", out int qualityHint))
+                picProps.QualityToggle = qualityHint != 0;
+
             bool hasSm = TryGetBool(metadata, "sm", out bool sm);
             bool hasSmDyn = TryGetBool(metadata, "sm_dyn", out bool smDyn);
             if (hasSm || hasSmDyn) {

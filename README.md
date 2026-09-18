@@ -20,6 +20,7 @@
 - [首次配置](#首次配置)
 - [使用指南](#使用指南)
 - [参数说明](#参数说明)
+- [Anlas 余额与消耗](#anlas-余额与消耗)
 - [输出与文件命名](#输出与文件命名)
 - [配置与文件位置](#配置与文件位置)
 - [自动更新](#自动更新)
@@ -31,7 +32,8 @@
 ## 功能特性
 - 核心能力：随机组合画师串生成画风，支持分组绑定、权重控制、参数保持，适合训练集批量生成。
 - 批量生成与节奏控制：支持运行次数与长短休配置。
-- 多模型支持：NAI2 / NAI3 / NAI3 Furry / NAI4 Preview / NAI4 Full / NAI4.5 Curated / NAI4.5 Full。
+- 多模型支持：NAI3 / NAI3 Furry / NAI4 Preview / NAI4 Full / NAI4.5 Curated / NAI4.5 Full / NAI5 Curated / NAI5 Full。
+- Anlas 统计：可在设置中开启，自动查询余额、记录真实消耗，并在「生成」按钮右侧显示本次预估消耗与剩余额度（NAI5 另有 Opus 额度条）。
 - Prompt 模板系统：随机提示词、Wildcard 等占位符可组合使用。
 - 参考图能力：Vibe 多参考图（含 `.naiv4vibe`）、Img2Img 强度/噪声。
 - 导演工具：背景抠图、线稿、草图、上色、表情、去杂，支持单图/批量。
@@ -175,7 +177,7 @@ school uniform
 ## 参数说明
 | 参数 | 说明 | 备注 |
 | --- | --- | --- |
-| Model | 选择模型 | NAI2 / NAI3 / NAI3 Furry / NAI4 Preview / NAI4 Full / NAI4.5 Curated / NAI4.5 Full |
+| Model | 选择模型 | NAI3 / NAI3 Furry / NAI4 Preview / NAI4 Full / NAI4.5 Curated / NAI4.5 Full / NAI5 Curated / NAI5 Full |
 | Steps | 生成步数 | 1-28（超出会被自动限制） |
 | Sampler | 采样器 | `k_euler` / `k_euler_ancestral` / `k_dpmpp_2s_ancestral` / `k_dpmpp_2m_sde` / `k_dpmpp_2m` / `k_dpmpp_sde` / `ddim_v3` |
 | Noise Schedule | 噪声策略 | `native` / `karras` / `exponential` / `polyexponential` |
@@ -196,6 +198,60 @@ school uniform
 | 代理 | Proxy | 仅在需要时填写 |
 | 黑名单 | PromptBlackList / Regex | 主要用于随机提示词过滤 |
 
+> 注：NAI2（`nai-diffusion-2`）已被 NovelAI 官方标记为 Retired 并从模型列表中移除，服务端会直接返回 `model nai-diffusion-2 doesn't exist`，因此本工具不再提供该选项；旧配置若保存了 NAI2，加载时会自动切换为 NAI3 并写入日志。
+
+## NovelAI V5 说明
+`nai-diffusion-5-curated` / `nai-diffusion-5-full` 的请求体按官方网页端规则构建，对齐 [官方模型文档](https://docs.novelai.net/en/image/models)。与 V4.5 的差异：
+- 使用 `params_version: 4`，并以 `qualityPresetId`（`standard` / `none`）和 `ucPresetId` 取代旧的 `qualityToggle` / `ucPreset`。
+- 噪声表固定为 `karras`（官方前端对 V5 强制），因此 Noise Schedule 选项对 V5 不生效。
+- 采样器为 `k_euler_ancestral` 时启用 brownian 噪声（`prefer_brownian: true`、`deliberate_euler_ancestral_bug: false`），其他采样器相反。
+- V5 不支持 SMEA / DYN、Decrisp（`dynamic_thresholding`）与 Variety（`skip_cfg_above_sigma`），这些选项对 V5 会被忽略。
+- V5 官方前端未开放 Vibe Transfer：配置了 Vibe 参考图时会在日志中给出提示，实际是否生效取决于服务端。
+- 官方默认参数：Steps 23、Prompt Guidance 7、Sampler `k_euler_ancestral`、分辨率 832x1216。
+
+## Anlas 余额与消耗
+NovelAI 只提供查询余额的接口，没有公开「按参数预估消耗」的接口（官方前端里出现的 `/ai/generate-image/request-price` 实测返回 404）。本工具的处理方式：
+
+- **开关**：设置页的「开启Anlas统计」（默认开启）。关闭后不再请求余额接口，也不在「生成」按钮上显示任何信息。
+- **按钮显示**：开启后「生成」按钮右侧会拼上「预估消耗 / 剩余总量」，例如 `生成    Anlas ≈23 / 8992`。带 `≈` 表示拟合公式的预估值，不带 `≈` 表示本地缓存里的实测值；余额尚未加载（或接口不可用）时显示 `?`。生成过程中按钮显示为 `停止    Anlas …`。
+- **NAI5 另算**：NAI5 消耗的是 Opus 订阅额度条而不是 Anlas，因此显示为 `生成    额度 0.085% / 100% + Anlas ≈35 / 8992`（后面的 Anlas 段仅在这套参数确实扣 Anlas 时出现；1088x1088 及以下且 Steps ≤ 28 走免费额度，只显示额度条）。
+- **余额**：`GET {Api}/user/subscription`，Anlas 余额 = `trainingStepsLeft.fixedTrainingStepsLeft + trainingStepsLeft.purchasedTrainingSteps`（与官方网页端算法一致），额度条百分比取 `usage.percent`。
+- **消耗**：每次生图前先记录余额，生图结束后再查一次，两者相减即为本次真实消耗，连同模型 / 尺寸 / Steps / 张数 / 采样器写入日志。
+- **本地缓存**：实测消耗按「模型 + 尺寸 + Steps + 张数 + 动作/强度」写入 `C:\Users\Public\Documents\auto_nai3_system\anlas_cost_cache.toml`；命中缓存就直接复用（按钮上的预估值随之变成实测值），没有命中才用「生图前后余额相减」重新获取。Prompt 不影响消耗，所以不进缓存键。缓存有效期 8 小时，过期后自动失效并重新获取。
+- 「日志」页右上角新增「查询Anlas余额」按钮，可随时手动查询余额、Opus 用量百分比与订阅到期时间。
+- **请求频率**：每张图最多额外请求 1 次余额接口，30 秒内复用同一份结果，失败按指数退避（2 秒起、最长 60 秒），连续 5 次失败会在本次会话停止自动统计，收到 429 直接退避 60 秒，不会对服务器造成压力。
+- 若填写的是不支持该接口的第三方中转 Api，会记录一次告警并停止本次会话的自动统计，不影响正常生图。
+
+### 计费规则（真实接口实测）
+- **免费**：单张、宽×高 ≤ 1024×1024（即 1,048,576 像素）且 Steps ≤ 28 时不消耗 Anlas。
+- 在免费尺寸 / 步数下一次出多张（`n_samples > 1`）时，第一张仍然免费，其余按公式计费。
+- 其余情况：
+
+```
+消耗 = ceil( 百万像素 × 张数 × f(steps) × 模型倍率 )
+f(steps) = steps × 4/7 + 3.2
+模型倍率：V5（nai-diffusion-5-*）= 1.5，其余模型 = 1.0
+```
+
+实测样例（差分实测，Opus / tier 3）：
+
+| 模型 | 尺寸 | Steps | 张数 | 实测消耗 | 预估 |
+| --- | --- | --- | --- | --- | --- |
+| NAI4.5 Full | 1024x1024 | 28 | 1 | 0 | 0 |
+| NAI4.5 Full | 1024x1024 | 29 | 1 | 21 | 21 |
+| NAI4.5 Full | 1088x1088 | 28 | 1 | 23 | 23 |
+| NAI4.5 Full | 1088x1088 | 50 | 1 | 38 | 38 |
+| NAI4.5 Full | 1472x1472 | 28 | 1 | 42 | 42 |
+| NAI4.5 Full | 1472x1472 | 50 | 1 | 69 | 69 |
+| NAI4.5 Full | 1088x1088 | 28 | 2 | 46 | 46 |
+| NAI4.5 Full | 512x512 | 28 | 2 | 5 | 5 |
+| NAI5 Full | 1088x1088 | 28 | 1 | 35 | 35 |
+| NAI5 Full | 1472x1472 | 28 | 1 | 63 | 63 |
+
+补充说明：
+- 采样器、Curated / Full、NAI3 与 NAI4.5 之间的差异不影响消耗值。
+- 服务端单次请求最大分辨率为 1536x2048，超出会返回 400。
+- Img2Img 的 Strength 对消耗的影响官方未公开，日志中的实测值依然准确。
 ## 输出与文件命名
 输出文件名由“输出文件名格式”决定：
 - `NovalAI`：`{prompt} s-{seed}`
@@ -241,5 +297,7 @@ school uniform
 
 ## 相关链接
 - 使用教程：<https://cyanautumn.github.io/NovalAi3AutoMaticDoc/>
+- NovelAI 官方文档：<https://docs.novelai.net/en/image/>
+- NovelAI 官方模型列表：<https://docs.novelai.net/en/image/models>
 - Prompt 解析：<https://spell.novelai.dev/>
 - WD-Tagger：<https://huggingface.co/spaces/SmilingWolf/wd-tagger>

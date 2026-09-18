@@ -17,6 +17,7 @@ A Windows client for NovelAI batch image generation and director tools. Supports
 - [First-time Setup](#first-time-setup)
 - [Usage Guide](#usage-guide)
 - [Parameter Reference](#parameter-reference)
+- [Anlas Balance & Cost](#anlas-balance--cost)
 - [Output & Naming](#output--naming)
 - [Configuration & File Locations](#configuration--file-locations)
 - [Auto Update](#auto-update)
@@ -27,7 +28,8 @@ A Windows client for NovelAI batch image generation and director tools. Supports
 
 ## Features
 - Batch generation with pacing: run count and short/long sleep intervals.
-- Multi-model support: NAI2 / NAI3 / NAI3 Furry / NAI4 Preview / NAI4 Full / NAI4.5 Curated / NAI4.5 Full.
+- Multi-model support: NAI3 / NAI3 Furry / NAI4 Preview / NAI4 Full / NAI4.5 Curated / NAI4.5 Full / NAI5 Curated / NAI5 Full.
+- Anlas tracking: can be enabled in the settings; it queries the balance, records the real cost and shows the estimated cost / remaining Anlas next to the Generate button (NAI5 additionally shows the Opus quota bar).
 - Prompt templates: fixed/random artist, random prompt, Wildcard placeholders.
 - Reference images: Vibe multi-reference (including `.naiv4vibe`), Img2Img strength/noise.
 - Director tools: background removal, line art, sketch, colorize, emotion, declutter; single or batch.
@@ -141,7 +143,7 @@ Weight format:
 ## Parameter Reference
 | Parameter | Description | Notes |
 | --- | --- | --- |
-| Model | Model selection | NAI2 / NAI3 / NAI3 Furry / NAI4 Preview / NAI4 Full / NAI4.5 Curated / NAI4.5 Full |
+| Model | Model selection | NAI3 / NAI3 Furry / NAI4 Preview / NAI4 Full / NAI4.5 Curated / NAI4.5 Full / NAI5 Curated / NAI5 Full |
 | Steps | Steps count | 1-28 (clamped) |
 | Sampler | Sampler | `k_euler` / `k_euler_ancestral` / `k_dpmpp_2s_ancestral` / `k_dpmpp_2m_sde` / `k_dpmpp_2m` / `k_dpmpp_sde` / `ddim_v3` |
 | Noise Schedule | Noise strategy | `native` / `karras` / `exponential` / `polyexponential` |
@@ -162,6 +164,60 @@ Weight format:
 | Proxy | Proxy | Only if needed |
 | Blacklist | PromptBlackList / Regex | Filters random prompts |
 
+> Note: NAI2 (`nai-diffusion-2`) is officially retired and removed from NovelAI's model list; the server answers `model nai-diffusion-2 doesn't exist`, so the tool no longer offers it. A preset that still stores NAI2 is switched to NAI3 on load, with a log entry.
+
+## NovelAI V5 Notes
+Request bodies for `nai-diffusion-5-curated` / `nai-diffusion-5-full` follow the official web client rules and match the [official model docs](https://docs.novelai.net/en/image/models). Differences from V4.5:
+- Uses `params_version: 4` and sends `qualityPresetId` (`standard` / `none`) plus `ucPresetId` instead of the legacy `qualityToggle` / `ucPreset`.
+- The noise schedule is forced to `karras` (the official client does this for V5), so the Noise Schedule option has no effect on V5.
+- With the `k_euler_ancestral` sampler, brownian noise is enabled (`prefer_brownian: true`, `deliberate_euler_ancestral_bug: false`); other samplers invert both flags.
+- V5 does not support SMEA / DYN, Decrisp (`dynamic_thresholding`) or Variety (`skip_cfg_above_sigma`); those options are ignored for V5.
+- Vibe Transfer is not exposed for V5 in the official client: a log warning is written when Vibe references are configured, and whether they take effect depends on the server.
+- Official defaults: Steps 23, Prompt Guidance 7, Sampler `k_euler_ancestral`, resolution 832x1216.
+
+## Anlas Balance & Cost
+NovelAI exposes a balance endpoint but no public "price for these parameters" endpoint (the `/ai/generate-image/request-price` route that appears in the official frontend returns 404). This tool therefore:
+
+- **Toggle**: `Track Anlas usage` on the settings page (on by default). When it is off, the balance endpoint is never called and the Generate button shows no extra information.
+- **Button**: with tracking on, the Generate button gets an `estimate / remaining` suffix, e.g. `Generate    Anlas ≈23 / 8992`. A `≈` marks the value estimated by the fitted formula; without `≈` the value comes from the local measured cache. The balance shows `?` until it has been loaded (or when the endpoint is unavailable). While generating, the button reads `Stop    Anlas …`.
+- **NAI5 is different**: NAI5 spends the Opus subscription quota instead of Anlas, so it shows `Generate    quota 0.085% / 100% + Anlas ≈35 / 8992` (the Anlas part only appears when those parameters really do cost Anlas; 1088x1088 or smaller with steps <= 28 is free and shows the quota bar alone).
+- **Balance**: `GET {Api}/user/subscription`; the Anlas balance is `trainingStepsLeft.fixedTrainingStepsLeft + trainingStepsLeft.purchasedTrainingSteps` (same formula as the official web client) and the quota bar percentage comes from `usage.percent`.
+- **Cost**: the balance is read before each generation and again afterwards; the difference is the real cost of that image and is written to the log together with model / size / steps / image count / sampler.
+- **Local cache**: measured costs are stored per "model + size + steps + image count + action/strength" in `C:\Users\Public\Documents\auto_nai3_system\anlas_cost_cache.toml`. A cache hit is reused directly (the button then shows the measured value instead of an estimate); only a miss falls back to the before/after balance difference. Prompts never affect the cost, so they are not part of the key. Entries expire after 8 hours and are then measured again.
+- A **Query Anlas** button in the top-right of the Log tab shows the balance, the Opus usage percentage and the subscription expiry at any time.
+- **Request rate**: at most one extra balance request per image, results are reused for 30 seconds, failures back off exponentially (2 s up to 60 s), 5 consecutive failures stop tracking for the session and a 429 backs off 60 s; this puts no load on the server.
+- If the configured API is a third-party proxy without this endpoint, a single warning is logged and automatic tracking stops for the session; generation is unaffected.
+
+### Billing rules (measured against the live API)
+- **Free**: a single image with width x height <= 1024x1024 (1,048,576 pixels) and steps <= 28 costs no Anlas.
+- With more than one image (`n_samples > 1`) at a free size/steps, the first image is still free and the rest are billed with the formula below.
+- Otherwise:
+
+```
+cost = ceil( megapixels x n_samples x f(steps) x modelMultiplier )
+f(steps) = steps x 4/7 + 3.2
+modelMultiplier: V5 (nai-diffusion-5-*) = 1.5, other models = 1.0
+```
+
+Measured samples (difference method, Opus / tier 3):
+
+| Model | Size | Steps | Images | Measured | Estimate |
+| --- | --- | --- | --- | --- | --- |
+| NAI4.5 Full | 1024x1024 | 28 | 1 | 0 | 0 |
+| NAI4.5 Full | 1024x1024 | 29 | 1 | 21 | 21 |
+| NAI4.5 Full | 1088x1088 | 28 | 1 | 23 | 23 |
+| NAI4.5 Full | 1088x1088 | 50 | 1 | 38 | 38 |
+| NAI4.5 Full | 1472x1472 | 28 | 1 | 42 | 42 |
+| NAI4.5 Full | 1472x1472 | 50 | 1 | 69 | 69 |
+| NAI4.5 Full | 1088x1088 | 28 | 2 | 46 | 46 |
+| NAI4.5 Full | 512x512 | 28 | 2 | 5 | 5 |
+| NAI5 Full | 1088x1088 | 28 | 1 | 35 | 35 |
+| NAI5 Full | 1472x1472 | 28 | 1 | 63 | 63 |
+
+Notes:
+- Sampler, Curated/Full and the difference between NAI3 and NAI4.5 do not change the cost.
+- The server rejects requests above 1536x2048 with HTTP 400.
+- The effect of Img2Img strength on cost is undocumented; the measured value in the log stays accurate.
 ## Output & Naming
 Filename format depends on “Output Filename Format”:
 - `NovalAI`: `{prompt} s-{seed}`
@@ -207,6 +263,8 @@ In non-debug mode, the app checks updates on startup via GitHub Releases.
 
 ## Links
 - User guide: <https://cyanautumn.github.io/NovalAi3AutoMaticDoc/>
+- NovelAI official docs: <https://docs.novelai.net/en/image/>
+- NovelAI official model list: <https://docs.novelai.net/en/image/models>
 - Prompt parsing: <https://spell.novelai.dev/>
 - WD-Tagger: <https://huggingface.co/spaces/SmilingWolf/wd-tagger>
 

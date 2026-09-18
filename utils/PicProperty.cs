@@ -15,7 +15,7 @@ using System.Windows.Forms.Design;
 
 namespace AutoNai3Tools.utils {
     public class PicProperty  {
-        [Category("生成")] [DisplayName("模型")] public BodyTools.Model Model { get; set; }
+        [Category("生成")] [DisplayName("模型")] [TypeConverter(typeof(ModelTypeConverter))] public BodyTools.Model Model { get; set; }
         [Category("生成")] [DisplayName("Noise Schedule(噪声)")] public NoiseOptions Noise { get; set; }
 
         private int _steps=28;

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -64,11 +64,17 @@
     <Compile Include="body\Nai4_5Curated.cs" />
     <Compile Include="body\Nai4_5Full.cs" />
     <Compile Include="body\Nai4Preview.cs" />
+    <Compile Include="body\Nai5Curated.cs" />
+    <Compile Include="body\Nai5Full.cs" />
     <Compile Include="body\NovalAIBase.cs" />
     <Compile Include="Form1.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Form1.PromptContext.cs">
+      <DependentUpon>Form1.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.Anlas.cs">
       <DependentUpon>Form1.cs</DependentUpon>
       <SubType>Form</SubType>
     </Compile>
@@ -115,6 +121,8 @@
     <Compile Include="utils\TagDatabase.cs" />
     <Compile Include="utils\AutoCompleteHelper.cs" />
     <Compile Include="utils\ImageSourceMetadataReader.cs" />
+    <Compile Include="utils\AnlasCostCache.cs" />
+    <Compile Include="utils\AnlasService.cs" />
     <Compile Include="utils\Vibe.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

@@ -121,10 +121,12 @@ namespace AutoNai3Tools.body {
         public int n_samples { get; set; }
 
         public int? extra_noise_seed { get; set; }
-        public int ucPreset { get; set; }
+        public int? ucPreset { get; set; }
         public bool prefer_brownian { get; set; }
         [JsonProperty("qualityToggle")]
-        public bool qualityToggle { get; set; }
+        public bool? qualityToggle { get; set; }
+        public string qualityPresetId { get; set; }
+        public string ucPresetId { get; set; }
         public bool? sm { get; set; }
         public bool? sm_dyn { get; set; }
         public bool dynamic_thresholding { get; set; }

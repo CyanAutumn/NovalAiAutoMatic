@@ -17,6 +17,7 @@ NovelAI 向けの Windows 一括生成・ディレクターツールクライア
 - [初期設定](#初期設定)
 - [使い方](#使い方)
 - [パラメータ説明](#パラメータ説明)
+- [Anlas 残高と消費量](#anlas-残高と消費量)
 - [出力とファイル名](#出力とファイル名)
 - [設定とファイル配置](#設定とファイル配置)
 - [自動更新](#自動更新)
@@ -27,7 +28,8 @@ NovelAI 向けの Windows 一括生成・ディレクターツールクライア
 
 ## 機能
 - 一括生成とリズム制御：実行回数と短休/長休の設定。
-- 複数モデル対応：NAI2 / NAI3 / NAI3 Furry / NAI4 Preview / NAI4 Full / NAI4.5 Curated / NAI4.5 Full。
+- 複数モデル対応：NAI3 / NAI3 Furry / NAI4 Preview / NAI4 Full / NAI4.5 Curated / NAI4.5 Full / NAI5 Curated / NAI5 Full。
+- Anlas 集計：設定で有効化でき、残高の取得・実消費の記録に加えて、「生成」ボタンの右側に今回の推定消費と残り Anlas を表示します（NAI5 は Opus クォータバーも表示）。
 - Prompt テンプレート：固定/ランダム画師、ランダム提示詞、Wildcard 占位符。
 - 参照画像：Vibe 複数参照（`.naiv4vibe` 対応）、Img2Img 強度/ノイズ。
 - ディレクターツール：背景除去、線画、スケッチ、着色、表情、ゴミ除去。単体/一括に対応。
@@ -141,7 +143,7 @@ artistC,0,2,0,3|artistD
 ## パラメータ説明
 | パラメータ | 説明 | 備考 |
 | --- | --- | --- |
-| Model | モデル選択 | NAI2 / NAI3 / NAI3 Furry / NAI4 Preview / NAI4 Full / NAI4.5 Curated / NAI4.5 Full |
+| Model | モデル選択 | NAI3 / NAI3 Furry / NAI4 Preview / NAI4 Full / NAI4.5 Curated / NAI4.5 Full / NAI5 Curated / NAI5 Full |
 | Steps | 生成ステップ数 | 1-28（超過は自動制限） |
 | Sampler | サンプラー | `k_euler` / `k_euler_ancestral` / `k_dpmpp_2s_ancestral` / `k_dpmpp_2m_sde` / `k_dpmpp_2m` / `k_dpmpp_sde` / `ddim_v3` |
 | Noise Schedule | ノイズ方式 | `native` / `karras` / `exponential` / `polyexponential` |
@@ -162,6 +164,60 @@ artistC,0,2,0,3|artistD
 | Proxy | Proxy | 必要時のみ |
 | ブラックリスト | PromptBlackList / Regex | ランダム提示詞のフィルタ用 |
 
+> 注：NAI2（`nai-diffusion-2`）は NovelAI 公式で Retired となりモデル一覧から削除されました。サーバーは `model nai-diffusion-2 doesn't exist` を返すため、本ツールでは選択肢から除外しています。NAI2 を保存した旧設定は読み込み時に NAI3 へ自動切替し、ログに記録します。
+
+## NovelAI V5 について
+`nai-diffusion-5-curated` / `nai-diffusion-5-full` のリクエストボディは公式ウェブクライアントの規則に合わせて構築し、[公式モデルドキュメント](https://docs.novelai.net/en/image/models) に対応しています。V4.5 との違い：
+- `params_version: 4` を使用し、旧 `qualityToggle` / `ucPreset` の代わりに `qualityPresetId`（`standard` / `none`）と `ucPresetId` を送信します。
+- ノイズ方式は `karras` 固定（公式クライアントが V5 で強制）のため、Noise Schedule の設定は V5 では反映されません。
+- サンプラーが `k_euler_ancestral` のときは brownian ノイズを有効化（`prefer_brownian: true`、`deliberate_euler_ancestral_bug: false`）、それ以外のサンプラーでは逆になります。
+- V5 は SMEA / DYN、Decrisp（`dynamic_thresholding`）、Variety（`skip_cfg_above_sigma`）に対応していないため、これらの設定は無視されます。
+- 公式クライアントでは V5 の Vibe Transfer は未開放です。Vibe 参照画像を設定した場合はログに警告を出力します（実際に有効かはサーバー次第）。
+- 公式デフォルト：Steps 23、Prompt Guidance 7、Sampler `k_euler_ancestral`、解像度 832x1216。
+
+## Anlas 残高と消費量
+NovelAI が公開しているのは残高照会のみで、「パラメータごとの消費量を事前に取得する」API はありません（公式フロントエンドに現れる `/ai/generate-image/request-price` は実測 404）。本ツールの扱い：
+
+- **スイッチ**：設定ページの「Anlas 集計を有効化」（既定で有効）。オフにすると残高 API を呼び出さず、「生成」ボタンにも何も表示しません。
+- **ボタン表示**：有効時は「生成」ボタンの右側に「推定消費 / 残り」が付きます（例：`生成    Anlas ≈23 / 8992`）。`≈` はフィッティング式による推定値、`≈` がない場合はローカルキャッシュの実測値です。残高が未取得（または API が利用不可）のときは `?` を表示します。生成中は `停止    Anlas …` になります。
+- **NAI5 は別計算**：NAI5 は Anlas ではなく Opus 購読クォータを消費するため、`生成    クォータ 0.085% / 100% + Anlas ≈35 / 8992` のように表示します（Anlas 部分は今回のパラメータで実際に Anlas を消費する場合のみ。1088x1088 以下かつ Steps <= 28 は無料枠のためクォータバーのみ）。
+- **残高**：`GET {Api}/user/subscription`。Anlas 残高 = `trainingStepsLeft.fixedTrainingStepsLeft + trainingStepsLeft.purchasedTrainingSteps`（公式 Web クライアントと同じ計算式）、クォータバーの百分比は `usage.percent` を使用します。
+- **消費量**：生成の直前に残高を取得し、生成後にもう一度取得して差分を今回の実消費として、モデル / サイズ / Steps / 枚数 / サンプラーとともにログへ出力します。
+- **ローカルキャッシュ**：実測値は「モデル + サイズ + Steps + 枚数 + アクション/強度」単位で `C:\Users\Public\Documents\auto_nai3_system\anlas_cost_cache.toml` に保存します。ヒットした場合はそのまま再利用し（ボタン表示は推定値ではなく実測値になります）、ミスのときだけ生成前後の残高差で再取得します。Prompt は消費量に影響しないためキーに含めません。キャッシュの有効期限は 8 時間で、期限切れ後は再取得します。
+- 「ログ」タブ右上の「Anlas 残高を確認」ボタンで、残高・Opus 使用率・購読の有効期限をいつでも確認できます。
+- **リクエスト頻度**：1 枚につき最大 1 回の残高リクエストのみ、30 秒以内は同じ結果を再利用、失敗時は指数バックオフ（2 秒〜最大 60 秒）、5 回連続で失敗するとそのセッションの自動集計を停止、429 の場合は 60 秒バックオフします。サーバーへの負荷は問題ありません。
+- この API を持たないサードパーティ中継を Api に設定した場合は、警告を 1 回記録してそのセッションの自動集計を停止します（生成には影響しません）。
+
+### 課金ルール（実 API で実測）
+- **無料**：1 枚かつ 幅×高さ <= 1024x1024（1,048,576 ピクセル）かつ Steps <= 28 のときは Anlas を消費しません。
+- 無料のサイズ / Steps で複数枚（`n_samples > 1`）を生成する場合、1 枚目は無料で、残りが下記の式で課金されます。
+- それ以外：
+
+```
+消費 = ceil( メガピクセル × 枚数 × f(steps) × モデル倍率 )
+f(steps) = steps × 4/7 + 3.2
+モデル倍率：V5（nai-diffusion-5-*）= 1.5、その他 = 1.0
+```
+
+実測サンプル（差分実測、Opus / tier 3）：
+
+| モデル | サイズ | Steps | 枚数 | 実測 | 推定 |
+| --- | --- | --- | --- | --- | --- |
+| NAI4.5 Full | 1024x1024 | 28 | 1 | 0 | 0 |
+| NAI4.5 Full | 1024x1024 | 29 | 1 | 21 | 21 |
+| NAI4.5 Full | 1088x1088 | 28 | 1 | 23 | 23 |
+| NAI4.5 Full | 1088x1088 | 50 | 1 | 38 | 38 |
+| NAI4.5 Full | 1472x1472 | 28 | 1 | 42 | 42 |
+| NAI4.5 Full | 1472x1472 | 50 | 1 | 69 | 69 |
+| NAI4.5 Full | 1088x1088 | 28 | 2 | 46 | 46 |
+| NAI4.5 Full | 512x512 | 28 | 2 | 5 | 5 |
+| NAI5 Full | 1088x1088 | 28 | 1 | 35 | 35 |
+| NAI5 Full | 1472x1472 | 28 | 1 | 63 | 63 |
+
+補足：
+- サンプラー、Curated / Full、NAI3 と NAI4.5 の違いは消費量に影響しません。
+- 1 リクエストの最大解像度は 1536x2048 で、超えると 400 が返ります。
+- Img2Img の Strength の影響は非公開ですが、ログの実測値は正確です。
 ## 出力とファイル名
 出力ファイル名は「出力ファイル名形式」で決まります：
 - `NovalAI`：`{prompt} s-{seed}`
@@ -207,6 +263,8 @@ artistC,0,2,0,3|artistD
 
 ## 関連リンク
 - 利用ガイド：<https://cyanautumn.github.io/NovalAi3AutoMaticDoc/>
+- NovelAI 公式ドキュメント：<https://docs.novelai.net/en/image/>
+- NovelAI 公式モデル一覧：<https://docs.novelai.net/en/image/models>
 - Prompt 解析：<https://spell.novelai.dev/>
 - WD-Tagger：<https://huggingface.co/spaces/SmilingWolf/wd-tagger>
 

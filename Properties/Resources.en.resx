@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
@@ -53,6 +53,9 @@
   </data>
   <data name="Dialog_SelectTitle" xml:space="preserve">
     <value>Please Select</value>
+  </data>
+  <data name="Display_AnlasTracking" xml:space="preserve">
+    <value>Track Anlas Usage</value>
   </data>
   <data name="Display_ClosePicPreview" xml:space="preserve">
     <value>Disable Image Preview</value>
