@@ -35,7 +35,6 @@
   <div class="body">
     <nav class="rail" id="rail">
       <button class="item active" data-page="page-gen"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>生图</button>
-      <button class="item" data-page="page-params"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="8" cy="18" r="2" fill="currentColor" stroke="none"/></svg>生成参数</button>
       <button class="item" data-page="page-artist"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><circle cx="11" cy="11" r="2"/></svg>画师</button>
       <button class="item" data-page="page-wildcard"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/><path d="M8 5l-4 2 4 2M16 10l4 2-4 2"/></svg>wildcard</button>
       <button class="item" data-page="page-vibe"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M5.6 6.6l12.8 10.8M18.4 6.6L5.6 17.4"/></svg>Vibe</button>
@@ -100,41 +99,15 @@
             <div class="card">
               <header><h2>生成参数</h2><div class="spacer"></div><span class="hint">改动即时生效</span></header>
               <div class="content">
-                <label class="field"><span class="lbl">模型</span><select class="select" id="quickModel"></select></label>
-                <label class="field"><span class="lbl">分辨率</span><select class="select" id="quickSize"></select></label>
-                <div class="kv"><span class="k">Steps</span><div class="row"><input class="range" type="range" id="quickSteps" min="1" max="28" /><span class="range-val" id="quickStepsVal">28</span></div></div>
-                <div class="kv"><span class="k">Guidance</span><div class="row"><input class="range" type="range" id="quickScale" min="0" max="10" step="0.1" /><span class="range-val" id="quickScaleVal">5.0</span></div></div>
-                <div class="two">
-                  <label class="field"><span class="lbl">采样器</span><select class="select" id="quickSampler"></select></label>
-                  <label class="field"><span class="lbl">Noise</span><select class="select" id="quickNoise"></select></label>
-                </div>
-                <div class="kv"><span class="k">Decrisp</span><div class="row"><span class="switch"><input type="checkbox" id="quickDecrisp" /><span class="track"></span></span><span class="note">动态阈值</span></div></div>
-                <div class="kv"><span class="k">固定种子</span><div class="row"><span class="switch"><input type="checkbox" id="quickFixedSeed" /><span class="track"></span></span><input class="input" id="quickSeed" style="width:150px" /><button class="btn sm" id="quickSeedRoll">随机</button></div></div>
-                <div class="row wrap" style="margin-top:6px">
+                <div class="row wrap" style="margin-bottom:10px">
                   <span class="chip" id="chipModel">-</span>
                   <span class="chip" id="chipMp">-</span>
                   <span class="chip info" id="chipCost">-</span>
                 </div>
+                <div id="genParamGroups"></div>
+                <div class="note" style="margin-top:10px">跑图数量是队列长度：每一张单独发一次请求（n_samples=1），免费尺寸 / 步数下不会因为数量多而变成收费。把保存过参数的 PNG 拖到窗口里也能导入。</div>
               </div>
             </div>
-            <div class="card">
-              <header><h2>运行</h2></header>
-              <div class="content">
-                <div class="kv"><span class="k">跑图数量</span><div class="row"><input class="input" type="number" id="quickRunNum" min="1" style="width:90px" /></div></div>
-                <div class="kv"><span class="k">参数固定数量</span><div class="row"><input class="input" type="number" id="quickKeepParams" min="1" style="width:90px" /></div></div>
-                <div class="note">提示词串里可以用 &lt;固定画师&gt;、&lt;随机画师&gt;、&lt;片段名&gt; 占位。</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- ============ 生成参数 ============ -->
-      <section class="page" id="page-params">
-        <div class="grid wide">
-          <div class="card">
-            <header><h2>生成参数</h2><div class="spacer"></div><span class="hint">把保存过参数的 PNG 拖到窗口里也能导入</span></header>
-            <div class="content" id="paramGroups"></div>
           </div>
         </div>
       </section>

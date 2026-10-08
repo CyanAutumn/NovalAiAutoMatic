@@ -47,18 +47,13 @@ namespace AutoNai3Tools {
             return AnlasService.EstimateCost(width, height, steps, 1, model);
         }
 
-        /// <summary>整轮（跑图数量张）的预计消耗。</summary>
+        /// <summary>
+        /// 整轮（跑图数量张）的预计消耗。
+        /// 生成走的是「一张一个请求」的队列（每次 n_samples 都是 1，见 NovalAIBase），
+        /// 所以整轮 = 单张消耗 × 数量；免费尺寸 / 步数下单张就是 0，跑再多也还是 0。
+        /// </summary>
         internal int EstimateRunCost(int perImageCost, bool measured) {
-            int width = picProps.Width;
-            int height = picProps.Height;
-            int steps = picProps.Steps;
-            int count = Math.Max(1, picProps.RunNum);
-            string model = BodyTools.GetEnumDescription(picProps.Model);
-
-            if (!measured || (count > 1 && AnlasService.IsFreeGeometry(width, height, steps)))
-                return AnlasService.EstimateCost(width, height, steps, count, model);
-
-            return perImageCost * count;
+            return perImageCost * Math.Max(1, picProps.RunNum);
         }
 
         internal JObject BuildAnlasJson() {

@@ -75,7 +75,7 @@
         break;
       case 'pic':
         state.pic = data;
-        renderQuick();
+        renderGenSummary();
         renderParamValues();
         break;
       case 'settings':
@@ -407,8 +407,7 @@
     }
     renderHighlight();
 
-    buildModels();
-    renderQuick();
+    renderGenSummary();
     renderArtist();
     renderWildcards();
     renderVibes();
@@ -596,7 +595,7 @@
 
   /* ---------------- 生成参数页 ---------------- */
   function renderParams() {
-    const container = $('paramGroups');
+    const container = $('genParamGroups');
     const groups = {};
     const order = [];
     (state.picDescriptors || []).forEach((desc) => {
@@ -608,13 +607,11 @@
     container.innerHTML = '';
     order.forEach((cat) => {
       const title = document.createElement('div');
-      title.className = 'note';
-      title.style.margin = '4px 0 8px';
+      title.className = 'group-title';
       title.textContent = cat;
       container.appendChild(title);
       const grid = document.createElement('div');
-      grid.className = 'three';
-      grid.style.marginBottom = '10px';
+      grid.className = 'stack';
       groups[cat].forEach((desc) => {
         grid.appendChild(descriptorControl(desc, (name, value) => send('param:set', { name: name, value: value })));
       });
@@ -623,7 +620,7 @@
   }
 
   function renderParamValues() {
-    const container = $('paramGroups');
+    const container = $('genParamGroups');
     if (!state.picDescriptors || !state.pic) return;
     $$('label.field', container).forEach((label) => {
       const name = label.dataset.prop;
@@ -724,93 +721,20 @@
     $('artistModify').checked = !!a.modify;
   }
 
-  /* ---------------- 生图页快捷参数 ---------------- */
-  function buildModels() {
-    const sel = $('quickModel');
-    sel.innerHTML = '';
-    (state.models || []).forEach((m) => {
-      const o = document.createElement('option');
-      o.value = m.value;
-      o.textContent = m.label;
-      sel.appendChild(o);
-    });
-    const sizeSel = $('quickSize');
-    sizeSel.innerHTML = '';
-    (state.resolutionOptions || []).forEach((size) => {
-      const o = document.createElement('option');
-      o.value = size;
-      o.textContent = size;
-      sizeSel.appendChild(o);
-    });
-    const sampler = $('quickSampler');
-    const noise = $('quickNoise');
-    sampler.innerHTML = '';
-    noise.innerHTML = '';
-    (state.picDescriptors || []).forEach((desc) => {
-      if (desc.name === 'Sampler' || desc.name === 'Noise') {
-        const target = desc.name === 'Sampler' ? sampler : noise;
-        (desc.options || []).forEach((opt) => {
-          const o = document.createElement('option');
-          o.value = opt.value;
-          o.textContent = opt.label;
-          target.appendChild(o);
-        });
-      }
-    });
-    sampler.onchange = () => send('param:set', { name: 'Sampler', value: sampler.value });
-    noise.onchange = () => send('param:set', { name: 'Noise', value: noise.value });
-    sel.onchange = () => send('param:set', { name: 'Model', value: sel.value });
-    sizeSel.onchange = () => send('param:set', { name: 'ResolutionSelection', value: sizeSel.value });
-  }
-
-  function renderQuick() {
+  /* ---------------- 生图页参数摘要 ---------------- */
+  function renderGenSummary() {
     const p = state.pic;
     if (!p) return;
-    const setValue = (el, value) => { if (document.activeElement !== el) el.value = value; };
-    setValue($('quickModel'), p.Model);
-    setValue($('quickSize'), p.Width + 'x' + p.Height);
-    setValue($('quickSampler'), p.Sampler);
-    setValue($('quickNoise'), p.Noise);
-    setValue($('quickSteps'), p.Steps);
-    setValue($('quickScale'), p.Scale);
-    setValue($('quickSeed'), p.Seeds);
-    setValue($('quickRunNum'), p.RunNum);
-    setValue($('quickKeepParams'), p.RunKeepParams);
     $('runCount').textContent = p.RunNum;
-    $('quickStepsVal').textContent = p.Steps;
-    $('quickScaleVal').textContent = Number(p.Scale).toFixed(1);
-    $('quickDecrisp').checked = p.Decrisp === '开';
-    $('quickFixedSeed').checked = p.FixedSeeds === '开';
     $('chipModel').textContent = p.Model;
     $('chipMp').textContent = ((p.Width * p.Height) / 1e6).toFixed(2) + ' MP';
     $('chipSize').textContent = p.Width + 'x' + p.Height;
     $('chipSteps').textContent = p.Steps;
-    $('paramSummary').textContent = p.Model + ' · ' + p.Width + 'x' + p.Height + ' · ' + p.Steps + ' 步 · ×' + p.RunNum;
+    $('paramSummary').textContent = p.Model + ' · ' + p.Width + 'x' + p.Height + ' · ' + p.Steps + ' 步 · ×' + p.RunNum + '（逐张队列）';
     renderParamValues();
   }
 
-  $('quickSteps').addEventListener('input', () => { $('quickStepsVal').textContent = $('quickSteps').value; });
-  $('quickSteps').addEventListener('change', () => send('param:set', { name: 'Steps', value: parseInt($('quickSteps').value, 10) }));
-  $('quickScale').addEventListener('input', () => { $('quickScaleVal').textContent = Number($('quickScale').value).toFixed(1); });
-  $('quickScale').addEventListener('change', () => send('param:set', { name: 'Scale', value: parseFloat($('quickScale').value) }));
-  $('quickDecrisp').addEventListener('change', () => send('param:set', { name: 'Decrisp', value: $('quickDecrisp').checked ? '开' : '关' }));
-  $('quickFixedSeed').addEventListener('change', () => send('param:set', { name: 'FixedSeeds', value: $('quickFixedSeed').checked ? '开' : '关' }));
-  $('quickSeed').addEventListener('change', () => send('param:set', { name: 'Seeds', value: parseInt($('quickSeed').value, 10) || 0 }));
-  $('quickSeedRoll').onclick = () => {
-    const value = Math.floor(Math.random() * 10000000000);
-    $('quickSeed').value = value;
-    send('param:set', { name: 'Seeds', value: value });
-  };
-  $('quickRunNum').addEventListener('change', () => {
-    const value = clampToInput($('quickRunNum'), parseInt($('quickRunNum').value, 10) || 1);
-    $('quickRunNum').value = value;
-    send('param:set', { name: 'RunNum', value: value });
-  });
-  $('quickKeepParams').addEventListener('change', () => {
-    const value = clampToInput($('quickKeepParams'), parseInt($('quickKeepParams').value, 10) || 1);
-    $('quickKeepParams').value = value;
-    send('param:set', { name: 'RunKeepParams', value: value });
-  });
+  // 底部「跑图数量」加减：数量是队列长度，每张单独请求，所以免费尺寸跑再多也不收费
   $('runMinus').onclick = () => send('param:set', { name: 'RunNum', value: Math.max(1, (parseInt(state.pic.RunNum, 10) || 1) - 1) });
   $('runPlus').onclick = () => send('param:set', { name: 'RunNum', value: (parseInt(state.pic.RunNum, 10) || 1) + 1 });
   $('openOutput').onclick = () => send('output:open');
